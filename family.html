@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ElderNest - Family Portal</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <div class="brand-icon">❤</div>
+          <div>ElderNest<small>EverGuardian Care Platform</small></div>
+        </a>
+        <nav class="nav">
+          <a href="index.html" data-page>Home</a>
+          <a href="features.html" data-page>Features</a>
+          <a href="about.html" data-page>About</a>
+          <span data-auth-state></span>
+        </nav>
+        <button class="mobile-toggle" id="mobileToggle">☰</button>
+      </div>
+      <div class="mobile-menu" id="mobileMenu">
+        <a href="index.html" data-page>Home</a>
+        <a href="features.html" data-page>Features</a>
+        <a href="about.html" data-page>About</a>
+      </div>
+    </div>
+  </header>
+  <main class="page">
+    <div class="container">
+<div class="card"><h1 style="margin:0">Family Portal</h1><p class="note">Stay connected with wellness updates, care progress, and communication notices.</p></div>
+<section class="grid grid-3" style="margin-top:22px;">
+  <div class="card"><h3>John</h3><p class="note">Room A-12<br>Wellness update: Stable and under regular observation.<br>Medication status: Due in 15 mins</p><a class="btn" href="#">View Full Update</a></div>
+  <div class="card"><h3>Melinda</h3><p class="note">Room B-05<br>Wellness update: Requires continued observation.<br>Medication status: Missed 8:00 AM</p><a class="btn" href="#">View Full Update</a></div>
+  <div class="card"><h3>Billy</h3><p class="note">Room C-03<br>Wellness update: Receiving close caregiver attention.<br>Medication status: Completed</p><a class="btn" href="#">View Full Update</a></div>
+</section>
+<section class="card" style="margin-top:22px;">
+  <h2>Recent Family Notifications</h2>
+  <div class="space-y">
+    <div class="alert-item"><div><strong>John</strong><br><span class="note">Fall detected in Room A-12</span></div><span class="status critical">Important</span></div>
+    <div class="alert-item"><div><strong>Melinda</strong><br><span class="note">Medication missed</span></div><span class="status pending">Attention</span></div>
+  </div>
+</section>
+</div>
+  </main>
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <div class="brand">
+          <div class="brand-icon">❤</div>
+          <div>ElderNest<small>EverGuardian Care Platform</small></div>
+        </div>
+        <p class="note" style="margin-top:14px;max-width:520px;">A modern healthcare monitoring platform designed to improve resident safety, family communication, and caregiver efficiency.</p>
+      </div>
+      <div>
+        <h3>Quick Links</h3>
+        <p class="note">Home<br>Features<br>Login<br>Admin Dashboard</p>
+      </div>
+      <div>
+        <h3>Contact</h3>
+        <p class="note">Email: support@eldernest.com<br>Phone: +61 400 123 456<br>Address: Canberra, ACT, Australia</p>
+      </div>
+    </div>
+    <div class="footer-bottom">© 2026 ElderNest EverGuardian. All rights reserved.</div>
+  </footer>
+<script src="assets/app.js"></script>
+<script>
+  document.addEventListener("DOMContentLoaded", function () {
+    requireRole(['family']);
+  });
+</script>
+</body>
+</html>

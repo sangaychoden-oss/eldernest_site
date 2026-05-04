@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ElderNest - Login</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <div class="brand-icon">❤</div>
+          <div>ElderNest<small>EverGuardian Care Platform</small></div>
+        </a>
+
+        <nav class="nav">
+          <a href="index.html" data-page>Home</a>
+          <a href="features.html" data-page>Features</a>
+          <a href="about.html" data-page>About</a>
+          <span data-auth-state></span>
+        </nav>
+
+        <button class="mobile-toggle" id="mobileToggle">☰</button>
+      </div>
+
+      <div class="mobile-menu" id="mobileMenu">
+        <a href="index.html" data-page>Home</a>
+        <a href="features.html" data-page>Features</a>
+        <a href="about.html" data-page>About</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="container">
+      <section class="grid two-col" style="align-items:center; gap:30px;">
+        <div class="card">
+          <p class="badge">Secure Login</p>
+          <h1>Access your ElderNest portal</h1>
+          <p class="note">
+            Sign in as Admin, Caregiver, Resident, or Family user.
+          </p>
+
+          <div class="card" style="margin-top:20px;">
+            <h3>Demo Accounts</h3>
+            <p class="note">
+              <strong>Admin:</strong> admin@eldernest.com / password123<br>
+              <strong>Caregiver:</strong> caregiver@eldernest.com / care123<br>
+              <strong>Resident:</strong> resident@eldernest.com / resident123<br>
+              <strong>Family:</strong> family@eldernest.com / family123
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Login</h2>
+
+          <form id="loginForm">
+            <div class="form-group">
+              <label for="email">Email</label>
+              <input type="email" id="email" placeholder="Enter your email" required />
+            </div>
+
+            <div class="form-group">
+              <label for="password">Password</label>
+              <input type="password" id="password" placeholder="Enter your password" required />
+            </div>
+
+            <p id="loginError" style="color:red; margin-top:10px;"></p>
+
+            <button type="submit" class="btn">Sign In</button>
+          </form>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <div class="brand">
+          <div class="brand-icon">❤</div>
+          <div>ElderNest<small>EverGuardian Care Platform</small></div>
+        </div>
+        <p class="note" style="margin-top:14px;max-width:520px;">
+          A modern healthcare monitoring platform designed to improve resident safety,
+          family communication, and caregiver efficiency.
+        </p>
+      </div>
+
+      <div>
+        <h3>Quick Links</h3>
+        <p class="note">Home<br>Features<br>About<br>Login</p>
+      </div>
+
+      <div>
+        <h3>Contact</h3>
+        <p class="note">
+          Email: support@eldernest.com<br>
+          Phone: +61 400 123 456<br>
+          Address: Canberra, ACT, Australia
+        </p>
+      </div>
+    </div>
+
+    <div class="footer-bottom">© 2026 ElderNest EverGuardian. All rights reserved.</div>
+  </footer>
+
+  <script src="assets/app.js"></script>
+  <script>
+    document.getElementById('loginForm').addEventListener('submit', function (e) {
+      e.preventDefault();
+
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value.trim();
+      const errorBox = document.getElementById('loginError');
+
+      errorBox.textContent = '';
+
+      if (login(email, password)) {
+        const params = new URLSearchParams(window.location.search);
+        const redirect = params.get('redirect');
+
+        if (redirect) {
+          const role = localStorage.getItem('eldernestRole');
+
+          if (
+            (redirect === 'admin-dashboard.html' && role === 'admin') ||
+            (redirect === 'caregiver.html' && role === 'caregiver') ||
+            (redirect === 'resident.html' && role === 'resident') ||
+            (redirect === 'family.html' && role === 'family')
+          ) {
+            window.location.href = redirect;
+          } else {
+            redirectToDashboard();
+          }
+        } else {
+          redirectToDashboard();
+        }
+      } else {
+        errorBox.textContent = 'Invalid email or password.';
+      }
+    });
+  </script>
+</body>
+</html>
