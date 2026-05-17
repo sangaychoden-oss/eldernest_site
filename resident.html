@@ -34,14 +34,14 @@
     <div class="container">
 <div class="card"><h1 style="margin:0">Resident Dashboard</h1><p class="note">A simple and accessible page for daily wellness, reminders, and quick support.</p></div>
 <section class="grid grid-3" style="margin-top:22px;grid-template-columns:repeat(4,1fr);">
-  <div class="card"><div class="icon-box">❤</div><h3>Health Status</h3><p class="note">Current status is stable with regular caregiver monitoring.</p></div>
-  <div class="card"><div class="icon-box">💊</div><h3>Next Medication</h3><p class="note">Vitamin D tablet due at 1:00 PM with meal.</p></div>
-  <div class="card"><div class="icon-box">🔔</div><h3>Reminders</h3><p class="note">Hydration reminder and light exercise session scheduled.</p></div>
-  <div class="card"><div class="icon-box">👨‍👩‍👧</div><h3>Family Contact</h3><p class="note">Family members can be reached directly through the portal.</p></div>
+  <div class="card"><div class="icon-box">❤</div><h3>Health Status</h3><p class="note" id="healthStatusText">Current status is stable with regular caregiver monitoring.</p></div>
+  <div class="card"><div class="icon-box">💊</div><h3>Next Medication</h3><p class="note" id="nextMedicationText">Vitamin D tablet due at 1:00 PM with meal.</p></div>
+  <div class="card"><div class="icon-box">🔔</div><h3>Reminders</h3><p class="note" id="remindersText">Hydration reminder and light exercise session scheduled.</p></div>
+  <div class="card"><div class="icon-box">👨‍👩‍👧</div><h3>Family Contact</h3><p class="note" id="familyContactText">Family members can be reached directly through the portal.</p></div>
 </section>
 <section class="grid grid-2" style="margin-top:22px;">
-  <div class="card"><h2>Today's Schedule</h2><div class="space-y"><div class="mini-item">09:00 AM - Morning health check</div><div class="mini-item">01:00 PM - Medication reminder</div><div class="mini-item">04:00 PM - Family video call</div></div></div>
-  <div class="card"><h2>Quick Actions</h2><div class="grid grid-2"><a class="btn" href="#">Call Caregiver</a><a class="btn btn-outline" href="#">View Medication</a><a class="btn btn-outline" href="#">Open Messages</a><a class="btn" href="#" style="background:#ef4444;">Emergency Help</a></div></div>
+  <div class="card"><h2>Today's Schedule</h2><div class="space-y" id="residentScheduleList"><div class="mini-item">09:00 AM - Morning health check</div><div class="mini-item">01:00 PM - Medication reminder</div><div class="mini-item">04:00 PM - Family video call</div></div></div>
+  <div class="card"><h2>Quick Actions</h2><div class="grid grid-2" id="residentActions"><a class="btn" href="#">Call Caregiver</a><a class="btn btn-outline" href="#">View Medication</a><a class="btn btn-outline" href="#">Open Messages</a><a class="btn" href="#" style="background:#ef4444;">Emergency Help</a></div></div>
 </section>
 </div>
   </main>
@@ -54,10 +54,14 @@
         </div>
         <p class="note" style="margin-top:14px;max-width:520px;">A modern healthcare monitoring platform designed to improve resident safety, family communication, and caregiver efficiency.</p>
       </div>
-      <div>
-        <h3>Quick Links</h3>
-        <p class="note">Home<br>Features<br>Login<br>Admin Dashboard</p>
-      </div>
+      <div class="quick-links">
+    <h2>Quick Links</h2>
+
+    <a href="index.html">Home</a><br>
+    <a href="features.html">Features</a><br>
+    <a href="login.html">Login</a><br>
+    <a href="about.html">About</a>
+</div>
       <div>
         <h3>Contact</h3>
         <p class="note">Email: support@eldernest.com<br>Phone: +61 400 123 456<br>Address: Canberra, ACT, Australia</p>
@@ -67,8 +71,11 @@
   </footer>
 <script src="assets/app.js"></script>
 <script>
-  document.addEventListener("DOMContentLoaded", function () {
-    requireRole(['resident']);
+  document.addEventListener("DOMContentLoaded", async function () {
+    const allowed = await requireRole(['resident']);
+    if (allowed) {
+      await loadDashboardPage();
+    }
   });
 </script>
 </body>

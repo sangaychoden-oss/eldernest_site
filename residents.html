@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ElderNest - Residents</title>
+  <link rel="stylesheet" href="assets/styles.css" />
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <div class="header-inner">
+        <a class="brand" href="index.html">
+          <div class="brand-icon">EN</div>
+          <div>ElderNest<small>EverGuardian Care Platform</small></div>
+        </a>
+        <nav class="nav">
+          <a href="index.html" data-page>Home</a>
+          <a href="features.html" data-page>Features</a>
+          <a href="about.html" data-page>About</a>
+          <span data-auth-state></span>
+        </nav>
+        <button class="mobile-toggle" id="mobileToggle">Menu</button>
+      </div>
+      <div class="mobile-menu" id="mobileMenu">
+        <a href="index.html" data-page>Home</a>
+        <a href="features.html" data-page>Features</a>
+        <a href="about.html" data-page>About</a>
+      </div>
+    </div>
+  </header>
+
+  <main class="page">
+    <div class="container">
+      <section class="dashboard-layout">
+        <aside class="sidebar">
+          <div class="avatar-line">
+            <div class="avatar">AD</div>
+            <div><strong>Admin User</strong><br><small>System Administrator</small></div>
+          </div>
+          <a href="admin-dashboard.html">Overview</a>
+          <a href="residents.html" class="active">Residents</a>
+          <a href="admin-dashboard.html">Medication</a>
+          <a href="admin-dashboard.html">Alerts</a>
+          <a href="admin-dashboard.html">Schedules</a>
+          <a href="admin-dashboard.html">Reports</a>
+        </aside>
+
+        <section class="dashboard-content">
+          <div class="card panel-top">
+            <div>
+              <h1 style="margin:0">Residents</h1>
+              <p class="note">Open a resident to update their details, room, care notes, vitals, and chart values.</p>
+            </div>
+          </div>
+
+          <div class="residents-page-grid">
+            <div class="card">
+              <h2>Resident List</h2>
+              <div class="resident-list" id="residentsList">
+                <p class="note">Loading residents...</p>
+              </div>
+            </div>
+            <div id="residentDetailPanel">
+              <div class="card center-message">
+                <h2>Select a resident</h2>
+                <p class="note">Choose a resident from the list to view and edit their profile.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+      </section>
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-grid">
+      <div>
+        <div class="brand">
+          <div class="brand-icon">EN</div>
+          <div>ElderNest<small>EverGuardian Care Platform</small></div>
+        </div>
+        <p class="note" style="margin-top:14px;max-width:520px;">A modern healthcare monitoring platform designed to improve resident safety, family communication, and caregiver efficiency.</p>
+      </div>
+      <div class="quick-links">
+        <h2>Quick Links</h2>
+        <a href="index.html">Home</a><br>
+        <a href="features.html">Features</a><br>
+        <a href="login.html">Login</a><br>
+        <a href="about.html">About</a>
+      </div>
+      <div>
+        <h3>Contact</h3>
+        <p class="note">Email: support@eldernest.com<br>Phone: +61 400 123 456<br>Address: Canberra, ACT, Australia</p>
+      </div>
+    </div>
+    <div class="footer-bottom">2026 ElderNest EverGuardian. All rights reserved.</div>
+  </footer>
+
+  <script src="assets/app.js"></script>
+  <script>
+    document.addEventListener("DOMContentLoaded", async function () {
+      const allowed = await requireRole(['admin']);
+      if (allowed) {
+        await loadResidentsAdminPage();
+      }
+    });
+  </script>
+</body>
+</html>
