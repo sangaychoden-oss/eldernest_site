@@ -10,6 +10,10 @@ How to run:
    Email: admin@eldernest.com
    Password: password123
 
+Windows shortcut:
+- Double-click `start-eldernest.bat` to install missing dependencies and start both the backend and frontend.
+- If PowerShell blocks `npm start`, run `node server.js` from the project root instead.
+
 Included pages:
 - index.html
 - features.html
