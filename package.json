@@ -4,10 +4,19 @@
   "description": "ElderNest healthcare demo with Express backend",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "start:prod": "set NODE_ENV=production&& node server.js",
+    "check": "node --check server.js && node --check mysqlStore.js",
+    "db:schema": "powershell -NoProfile -Command \"Get-Content schema.sql | mysql -u root\""
   },
   "dependencies": {
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
     "express": "^4.18.2",
-    "express-session": "^1.17.3"
+    "express-mysql-session": "^3.0.3",
+    "express-rate-limit": "^8.5.2",
+    "express-session": "^1.17.3",
+    "helmet": "^8.1.0",
+    "mysql2": "^3.22.3"
   }
 }

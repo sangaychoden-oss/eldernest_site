@@ -2,6 +2,7 @@ let sessionData = null;
 let caregiverAlerts = [];
 let caregiverResidents = [];
 let adminDashboardData = null;
+let currentCaregiverShift = null;
 
 async function initCommon() {
   setActiveNav();
@@ -114,6 +115,29 @@ function renderAdminDashboard(data) {
     </tr>
   `).join('');
 
+  const existingPresence = document.getElementById('overviewCaregiverPresence');
+  if (!existingPresence) {
+    const statsGrid = document.querySelector('.stats-grid');
+    if (statsGrid) {
+      statsGrid.insertAdjacentHTML('afterend', `
+        <div class="card" id="overviewCaregiverPresence" style="margin-top:22px;">
+          <div class="panel-top" style="margin-bottom:12px;">
+            <div>
+              <h2 style="margin:0">Caregiver Presence</h2>
+              <p class="note">Live shift view for staff currently working.</p>
+            </div>
+            <button class="btn btn-outline" type="button" id="viewCaregiversButton">View Caregivers</button>
+          </div>
+          ${renderCaregiverPresenceTable(data.caregiverStatus || [])}
+        </div>
+      `);
+      const viewButton = document.getElementById('viewCaregiversButton');
+      if (viewButton) {
+        viewButton.addEventListener('click', () => renderAdminCaregiversSection(data));
+      }
+    }
+  }
+
   setupAdminSearch(data);
 }
 
@@ -214,7 +238,7 @@ function renderCaregiverResidentWorkspace(data, selectedResidentId) {
 
   renderCaregiverResidentList(data, residentsList, selectedResident && selectedResident.id);
   if (selectedResident) {
-    renderCaregiverResidentActions(data, selectedResident.id, 'notes');
+    renderCaregiverResidentActions(data, selectedResident.id, 'details');
   }
 
   document.getElementById('caregiverResidentSearch').addEventListener('input', event => {
@@ -244,7 +268,7 @@ function renderCaregiverResidentList(data, residentsList, selectedResidentId) {
 
   list.querySelectorAll('[data-care-resident]').forEach(button => {
     button.addEventListener('click', () => {
-      renderCaregiverResidentActions(data, Number(button.dataset.careResident), 'notes');
+      renderCaregiverResidentActions(data, Number(button.dataset.careResident), 'details');
       renderCaregiverResidentList(data, data.caregiverAssignments, Number(button.dataset.careResident));
     });
   });
@@ -252,6 +276,7 @@ function renderCaregiverResidentList(data, residentsList, selectedResidentId) {
 
 function caregiverActionTabs(residentId, activeTab) {
   const tabs = [
+    ['details', 'Edit Details'],
     ['notes', 'Notes'],
     ['medication', 'Medication'],
     ['adl', 'ADL Chart'],
@@ -277,7 +302,7 @@ function renderCaregiverResidentActions(data, residentId, activeTab) {
         <h1 style="margin:0">${escapeHtml(resident.name)}</h1>
         <p class="note">Room ${escapeHtml(resident.room)} - ${escapeHtml(resident.status)}</p>
       </div>
-      <button class="btn btn-outline" type="button" data-care-action="details" data-resident-id="${resident.id}">View Details</button>
+      <button class="btn btn-outline" type="button" data-care-action="details" data-resident-id="${resident.id}">Edit Details</button>
     </div>
     <div class="card">
       ${caregiverActionTabs(resident.id, activeTab)}
@@ -289,7 +314,7 @@ function renderCaregiverResidentActions(data, residentId, activeTab) {
     button.addEventListener('click', () => {
       const action = button.dataset.careAction;
       if (action === 'details') {
-        viewResidentDetails(data.caregiverAssignments.findIndex(item => item.id === resident.id));
+        showCaregiverResidentEditModal(data, resident.id);
         return;
       }
       renderCaregiverResidentActions(data, resident.id, action);
@@ -299,9 +324,86 @@ function renderCaregiverResidentActions(data, residentId, activeTab) {
   renderCaregiverActionPanel(data, resident, activeTab);
 }
 
+function showCaregiverResidentEditModal(data, residentId) {
+  const resident = (data.caregiverAssignments || []).find(item => item.id === residentId);
+  if (!resident) return;
+
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="caregiverResidentEditModal" role="dialog" aria-modal="true">
+      <div class="modal-box caregiver-edit-modal">
+        <div class="panel-top" style="margin-bottom:12px;">
+          <div>
+            <h2 style="margin:0">Edit Client Details</h2>
+            <p class="note">${escapeHtml(resident.name)} - Room ${escapeHtml(resident.room)}</p>
+          </div>
+          <button class="btn btn-outline" type="button" id="closeCaregiverResidentEdit">Close</button>
+        </div>
+        <div id="caregiverResidentEditModalPanel"></div>
+      </div>
+    </div>
+  `);
+
+  renderCaregiverEditForm(data, resident, document.getElementById('caregiverResidentEditModalPanel'), true);
+  document.getElementById('closeCaregiverResidentEdit').addEventListener('click', () => {
+    document.getElementById('caregiverResidentEditModal').remove();
+  });
+}
+
+function renderCaregiverEditForm(data, resident, panel, isModal = false) {
+  panel.innerHTML = `
+    <form id="caregiverResidentEditForm" class="resident-form">
+      ${isModal ? '' : '<h2>Edit Client Details</h2>'}
+      <input type="hidden" id="careResidentId" value="${resident.id}">
+      <div class="grid grid-2">
+        <div class="form-group"><label for="careResidentName">Resident Name</label><input id="careResidentName" value="${escapeHtml(resident.name)}" required></div>
+        <div class="form-group"><label for="careResidentAge">Age</label><input id="careResidentAge" type="number" min="1" value="${escapeHtml(resident.age || '')}" required></div>
+        <div class="form-group"><label for="careResidentRoom">Room Number</label><input id="careResidentRoom" value="${escapeHtml(resident.room)}" required></div>
+        <div class="form-group"><label for="careResidentStatus">Health Status</label><select id="careResidentStatus" required>${['Stable', 'Observation', 'Critical'].map(status => `<option value="${status}" ${resident.status === status || resident.status === statusClass(status) ? 'selected' : ''}>${status}</option>`).join('')}</select></div>
+      </div>
+      <div class="form-group"><label for="careResidentMedication">Medication</label><input id="careResidentMedication" value="${escapeHtml(resident.medication || '')}"></div>
+      <div class="form-group"><label for="careResidentNote">Care Note</label><textarea id="careResidentNote">${escapeHtml(resident.note || '')}</textarea></div>
+      <div class="form-group"><label for="careResidentCarePlan">Care Plan</label><textarea id="careResidentCarePlan">${escapeHtml(resident.carePlan || '')}</textarea></div>
+      <div class="grid grid-2">
+        <div class="form-group"><label for="careResidentAllergies">Allergies</label><input id="careResidentAllergies" value="${escapeHtml(resident.allergies || '')}"></div>
+        <div class="form-group"><label for="careResidentContact">Emergency Contact</label><input id="careResidentContact" value="${escapeHtml(resident.emergencyContact || '')}"></div>
+      </div>
+      <h3>Vitals</h3>
+      <div class="vitals-grid">
+        <label>Heart Rate<input id="careHeartRate" type="number" value="${escapeHtml((resident.vitals || {}).heartRate || '')}"></label>
+        <label>Blood Pressure<input id="careBloodPressure" value="${escapeHtml((resident.vitals || {}).bloodPressure || '')}"></label>
+        <label>Oxygen %<input id="careOxygen" type="number" value="${escapeHtml((resident.vitals || {}).oxygen || '')}"></label>
+        <label>Temperature C<input id="careTemperature" type="number" step="0.1" value="${escapeHtml((resident.vitals || {}).temperature || '')}"></label>
+      </div>
+      <h3>Charts</h3>
+      <div class="chart-preview">${renderChartBars(resident.chartData || {})}</div>
+      <div class="grid grid-2 chart-inputs">
+        ${Object.entries(resident.chartData || { wellness: 75, mobility: 75, medication: 75, sleep: 75 }).map(([label, value]) => `
+          <label>${escapeHtml(label)}<input data-care-chart-field="${escapeHtml(label)}" type="number" min="0" max="100" value="${escapeHtml(value)}"></label>
+        `).join('')}
+      </div>
+      <button class="btn" type="submit">Save Client Details</button>
+      <p class="success" id="careResidentSaveMessage" aria-live="polite"></p>
+    </form>
+  `;
+  document.getElementById('caregiverResidentEditForm').addEventListener('submit', event => saveCaregiverResidentDetails(event, data));
+}
+
 function renderCaregiverActionPanel(data, resident, activeTab) {
   const panel = document.getElementById('caregiverActionPanel');
   if (!panel) return;
+
+  if (activeTab === 'details') {
+    panel.innerHTML = `
+      <div class="center-message" style="margin:20px auto;">
+        <h2>Edit Client Details</h2>
+        <p class="note">Open the editable client record in a popup.</p>
+        <button class="btn" type="button" id="openCaregiverEditModal">Open Edit Details</button>
+      </div>
+    `;
+    document.getElementById('openCaregiverEditModal').addEventListener('click', () => showCaregiverResidentEditModal(data, resident.id));
+    return;
+  }
 
   if (activeTab === 'notes') {
     panel.innerHTML = `
@@ -395,11 +497,198 @@ function renderCaregiverActionPanel(data, resident, activeTab) {
   }
 }
 
+async function saveCaregiverResidentDetails(event, data) {
+  event.preventDefault();
+
+  const submitButton = event.submitter || document.querySelector('#caregiverResidentEditForm button[type="submit"]');
+  const message = document.getElementById('careResidentSaveMessage');
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = 'Saving...';
+  }
+  if (message) {
+    message.textContent = '';
+  }
+
+  const residentId = Number(document.getElementById('careResidentId').value);
+  const chartData = {};
+  document.querySelectorAll('[data-care-chart-field]').forEach(input => {
+    chartData[input.dataset.careChartField] = Number(input.value);
+  });
+
+  const payload = {
+    name: document.getElementById('careResidentName').value,
+    age: document.getElementById('careResidentAge').value,
+    room: document.getElementById('careResidentRoom').value,
+    status: document.getElementById('careResidentStatus').value,
+    medication: document.getElementById('careResidentMedication').value,
+    note: document.getElementById('careResidentNote').value,
+    carePlan: document.getElementById('careResidentCarePlan').value,
+    allergies: document.getElementById('careResidentAllergies').value,
+    emergencyContact: document.getElementById('careResidentContact').value,
+    vitals: {
+      heartRate: document.getElementById('careHeartRate').value,
+      bloodPressure: document.getElementById('careBloodPressure').value,
+      oxygen: document.getElementById('careOxygen').value,
+      temperature: document.getElementById('careTemperature').value
+    },
+    chartData
+  };
+
+  const response = await fetch(`/api/residents/${residentId}`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    if (submitButton) {
+      submitButton.disabled = false;
+      submitButton.textContent = 'Save Client Details';
+    }
+    alert(result.message || 'Unable to save client details.');
+    return;
+  }
+
+  const updatedAssignment = {
+    id: result.resident.id,
+    name: result.resident.name,
+    age: result.resident.age,
+    room: result.resident.room,
+    medication: result.resident.medication,
+    status: result.resident.status === 'Critical' ? 'Priority' : result.resident.status === 'Observation' ? 'Monitoring' : 'Care Active',
+    note: result.resident.note,
+    allergies: result.resident.allergies,
+    emergencyContact: result.resident.emergencyContact,
+    carePlan: result.resident.carePlan,
+    medications: result.resident.medications,
+    sensorAlerts: result.resident.sensorAlerts,
+    vitals: result.resident.vitals,
+    chartData: result.resident.chartData
+  };
+
+  data.caregiverAssignments = (data.caregiverAssignments || []).map(item => item.id === residentId ? updatedAssignment : item);
+  renderCaregiverResidentList(data, data.caregiverAssignments, residentId);
+  renderCaregiverResidentActions(data, residentId, 'details');
+
+  const modalPanel = document.getElementById('caregiverResidentEditModalPanel');
+  if (modalPanel) {
+    renderCaregiverEditForm(data, updatedAssignment, modalPanel, true);
+  }
+  const savedMessage = document.getElementById('careResidentSaveMessage');
+  if (savedMessage) {
+    savedMessage.textContent = 'Client details saved.';
+  }
+}
+
 function renderFamilyDashboard(data) {
+  const linkedResidents = data.linkedResidents || [];
+  const cards = document.getElementById('familyCards');
+  if (cards) {
+    cards.innerHTML = linkedResidents.map(resident => `
+      <div class="card">
+        <h3>${escapeHtml(resident.name)}</h3>
+        <p class="note">Room ${escapeHtml(resident.room)}<br>Wellness update: ${escapeHtml(resident.note)}<br>Medication status: ${escapeHtml(resident.medication)}</p>
+        <button class="btn" type="button" data-family-resident="${resident.id}">View Full Update</button>
+      </div>
+    `).join('') || '<div class="card"><p class="note">No linked resident is available for this family account.</p></div>';
+
+    cards.querySelectorAll('[data-family-resident]').forEach(button => {
+      button.addEventListener('click', () => showFamilyResidentUpdate(data, Number(button.dataset.familyResident)));
+    });
+  }
+
   const updates = document.getElementById('familyNotifications');
   updates.innerHTML = data.familyUpdates.map(item => `
-    <div class="alert-item"><div><strong>${item.resident}</strong><br><span class="note">${item.note}</span></div><span class="status ${item.status.toLowerCase()}">${item.status}</span></div>
-  `).join('');
+    <div class="alert-item"><div><strong>${escapeHtml(item.resident)}</strong><br><span class="note">${escapeHtml(item.note)}</span></div><span class="status ${statusClass(item.status)}">${escapeHtml(item.status)}</span></div>
+  `).join('') || '<p class="note">No notifications for your linked resident yet.</p>';
+
+  renderFamilyMessagePanel(data, 'family');
+}
+
+function showFamilyResidentUpdate(data, residentId) {
+  const resident = (data.linkedResidents || []).find(item => item.id === residentId);
+  if (!resident) return;
+
+  const residentAlerts = getResidentAlerts(resident, data);
+  const notifications = (data.familyUpdates || []).filter(update => update.resident === resident.name);
+
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="familyResidentUpdateModal" role="dialog" aria-modal="true">
+      <div class="modal-box resident-update-modal">
+        <div class="panel-top" style="margin-bottom:14px;">
+          <div>
+            <h2 style="margin:0">${escapeHtml(resident.name)}</h2>
+            <p class="note">Room ${escapeHtml(resident.room)} - latest family update</p>
+          </div>
+          <span class="status ${statusClass(resident.status)}">${escapeHtml(resident.status)}</span>
+        </div>
+        <div class="grid grid-2">
+          <div>
+            <h3>Care Summary</h3>
+            <div class="space-y">
+              <div class="mini-item"><span>Medication</span><strong>${escapeHtml(resident.medication)}</strong></div>
+              <div class="mini-item"><span>Care Plan</span><strong>${escapeHtml(resident.carePlan || resident.note)}</strong></div>
+              <div class="mini-item"><span>Emergency Contact</span><strong>${escapeHtml(resident.emergencyContact || 'Not recorded')}</strong></div>
+            </div>
+          </div>
+          <div>
+            <h3>Vitals</h3>
+            <div class="vitals-grid">
+              <div class="mini-item"><span>Heart Rate</span><strong>${escapeHtml((resident.vitals || {}).heartRate || '-')} bpm</strong></div>
+              <div class="mini-item"><span>Blood Pressure</span><strong>${escapeHtml((resident.vitals || {}).bloodPressure || '-')}</strong></div>
+              <div class="mini-item"><span>Oxygen</span><strong>${escapeHtml((resident.vitals || {}).oxygen || '-')}%</strong></div>
+              <div class="mini-item"><span>Temperature</span><strong>${escapeHtml((resident.vitals || {}).temperature || '-')} C</strong></div>
+            </div>
+          </div>
+        </div>
+        <div class="grid grid-2" style="margin-top:18px;">
+          <div>
+            <h3>Medications</h3>
+            <div class="space-y">
+              ${(resident.medications || []).map(medication => `
+                <div class="alert-item">
+                  <div><strong>${escapeHtml(medication.name)}</strong><br><span class="note">${escapeHtml(medication.dosage)} - ${escapeHtml(medication.time)}</span></div>
+                  <span class="status ${statusClass(medication.status)}">${escapeHtml(medication.status)}</span>
+                </div>
+              `).join('') || '<p class="note">No medications recorded.</p>'}
+            </div>
+          </div>
+          <div>
+            <h3>Notifications</h3>
+            <div class="space-y">
+              ${notifications.map(update => `
+                <div class="alert-item">
+                  <div><strong>${escapeHtml(update.resident)}</strong><br><span class="note">${escapeHtml(update.note)}</span></div>
+                  <span class="status ${statusClass(update.status)}">${escapeHtml(update.status)}</span>
+                </div>
+              `).join('') || '<p class="note">No notifications yet.</p>'}
+            </div>
+          </div>
+        </div>
+        <div style="margin-top:18px;">
+          <h3>Alerts</h3>
+          <div class="space-y">
+            ${residentAlerts.map(alert => `
+              <div class="alert-item">
+                <div><strong>${escapeHtml(alert.type || 'Care Alert')}</strong><br><span class="note">${escapeHtml(alert.message || alert.issue)}</span><br><small class="note">${escapeHtml(alert.time || 'Today')}</small></div>
+                <span class="status ${statusClass(alert.level)}">${escapeHtml(alert.level)}</span>
+              </div>
+            `).join('') || '<p class="note">No active alerts for this resident.</p>'}
+          </div>
+        </div>
+        <div style="margin-top:18px;display:flex;justify-content:flex-end;">
+          <button class="btn" type="button" id="closeFamilyResidentUpdate">Close</button>
+        </div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('closeFamilyResidentUpdate').addEventListener('click', () => {
+    document.getElementById('familyResidentUpdateModal').remove();
+  });
 }
 
 function renderResidentDashboard(data) {
@@ -407,16 +696,420 @@ function renderResidentDashboard(data) {
   document.getElementById('nextMedicationText').textContent = data.residentInfo.nextMedication;
   document.getElementById('remindersText').textContent = data.residentInfo.reminders;
   document.getElementById('familyContactText').textContent = data.residentInfo.familyContact;
+  setupResidentSummaryCards(data);
 
   const scheduleList = document.getElementById('residentScheduleList');
   scheduleList.innerHTML = data.schedule.map(item => `
-    <div class="mini-item">${item.time} - ${item.label}</div>
+    ${renderScheduleMiniItem(item)}
   `).join('');
 
   const actionsContainer = document.getElementById('residentActions');
   actionsContainer.innerHTML = data.residentInfo.quickActions.map(action => `
-    <a class="btn ${action.type === 'primary' ? '' : action.type === 'secondary' ? 'btn-outline' : ''}" href="#" style="${action.type === 'danger' ? 'background:#ef4444;' : ''}">${action.label}</a>
+    <button class="btn ${action.type === 'primary' ? '' : action.type === 'secondary' ? 'btn-outline' : ''}" type="button" data-resident-action="${escapeHtml(action.label)}" style="${action.type === 'danger' ? 'background:#ef4444;' : ''}">${action.label}</button>
   `).join('');
+  setupResidentQuickActions(data);
+}
+
+function setupResidentSummaryCards(data) {
+  const details = [
+    {
+      id: 'healthStatusText',
+      title: 'Health Status',
+      detail: residentHealthDetail(data)
+    },
+    {
+      id: 'nextMedicationText',
+      title: 'Next Medication',
+      detail: residentMedicationDetail(data)
+    },
+    {
+      id: 'remindersText',
+      title: 'Reminders',
+      detail: residentReminderDetail(data)
+    },
+    {
+      id: 'familyContactText',
+      title: 'Family Contact',
+      detail: residentFamilyContactDetail(data)
+    }
+  ];
+
+  details.forEach(item => {
+    const textNode = document.getElementById(item.id);
+    const card = textNode && textNode.closest('.card');
+    if (!card) return;
+    card.classList.add('clickable-card');
+    card.setAttribute('role', 'button');
+    card.setAttribute('tabindex', '0');
+    card.addEventListener('click', () => showResidentDetailModal(item.title, item.detail));
+    card.addEventListener('keydown', event => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        showResidentDetailModal(item.title, item.detail);
+      }
+    });
+  });
+}
+
+function setupResidentQuickActions(data) {
+  document.querySelectorAll('[data-resident-action]').forEach(button => {
+    button.addEventListener('click', () => {
+      const action = button.dataset.residentAction;
+      if (action === 'Call Caregiver') {
+        showCallCaregiverModal(data);
+      } else if (action === 'View Medication') {
+        showResidentDetailModal('Medication Details', residentMedicationDetail(data));
+      } else if (action === 'Open Messages') {
+        showResidentMessagesModal(data);
+      } else if (action === 'Emergency Help') {
+        showEmergencyHelpModal(data);
+      }
+    });
+  });
+}
+
+function showEmergencyHelpModal(data) {
+  const resident = (data.linkedResidents || [])[0] || {};
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="emergencyHelpModal" role="dialog" aria-modal="true">
+      <div class="modal-box">
+        <h2>Emergency Help</h2>
+        <p class="note">Use this if urgent help is needed. The care team and admin will be contacted immediately.</p>
+        <div class="space-y">
+          <button class="mini-item care-desk-button emergency-desk-button" type="button" id="emergencyDeskRequestButton">
+            <span>Emergency Desk</span>
+            <strong>Send emergency alert</strong>
+          </button>
+          <div class="mini-item"><span>Emergency Phone</span><strong>+61 400 123 456</strong></div>
+          <div class="mini-item"><span>Room</span><strong>${escapeHtml(resident.room || 'Resident room')}</strong></div>
+        </div>
+        <p class="success" id="emergencyDeskRequestMessage" aria-live="polite"></p>
+        <div style="margin-top:18px;display:flex;justify-content:flex-end;">
+          <button class="btn" type="button" id="closeEmergencyHelpModal">Close</button>
+        </div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('emergencyDeskRequestButton').addEventListener('click', () => sendEmergencyDeskRequest(data));
+  document.getElementById('closeEmergencyHelpModal').addEventListener('click', () => {
+    document.getElementById('emergencyHelpModal').remove();
+  });
+}
+
+async function sendEmergencyDeskRequest(data) {
+  const button = document.getElementById('emergencyDeskRequestButton');
+  const message = document.getElementById('emergencyDeskRequestMessage');
+  if (button) button.disabled = true;
+
+  const response = await fetch('/api/emergency-requests', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    if (button) button.disabled = false;
+    alert(result.message || 'Unable to send emergency alert.');
+    return;
+  }
+
+  data.alerts = [result.alert, ...(data.alerts || [])];
+  if (message) {
+    message.textContent = 'Emergency alert sent to caregiver and admin alerts.';
+  }
+}
+
+function showCallCaregiverModal(data) {
+  const resident = (data.linkedResidents || [])[0] || {};
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="callCaregiverModal" role="dialog" aria-modal="true">
+      <div class="modal-box">
+        <h2>Call Caregiver</h2>
+        <p class="note">Caregiver support is available from the care desk.</p>
+        <div class="space-y">
+          <button class="mini-item care-desk-button" type="button" id="careDeskRequestButton">
+            <span>Care Desk</span>
+            <strong>Request caregiver</strong>
+          </button>
+          <div class="mini-item"><span>Care Desk Phone</span><strong>+61 400 123 456</strong></div>
+          <div class="mini-item"><span>Resident Room</span><strong>${escapeHtml(resident.room || 'Resident room')}</strong></div>
+          <div class="mini-item"><span>Current Schedule</span><strong>${escapeHtml((data.schedule || [])[0] ? data.schedule[0].label : 'Daily care round')}</strong></div>
+        </div>
+        <p class="success" id="careDeskRequestMessage" aria-live="polite"></p>
+        <div style="margin-top:18px;display:flex;justify-content:flex-end;">
+          <button class="btn" type="button" id="closeCallCaregiverModal">Close</button>
+        </div>
+      </div>
+    </div>
+  `);
+
+  document.getElementById('careDeskRequestButton').addEventListener('click', () => sendCareDeskRequest(data));
+  document.getElementById('closeCallCaregiverModal').addEventListener('click', () => {
+    document.getElementById('callCaregiverModal').remove();
+  });
+}
+
+async function sendCareDeskRequest(data) {
+  const button = document.getElementById('careDeskRequestButton');
+  const message = document.getElementById('careDeskRequestMessage');
+  if (button) button.disabled = true;
+
+  const response = await fetch('/api/care-requests', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    if (button) button.disabled = false;
+    alert(result.message || 'Unable to request caregiver help.');
+    return;
+  }
+
+  data.alerts = [result.alert, ...(data.alerts || [])];
+  if (message) {
+    message.textContent = 'Caregiver has been notified in alerts.';
+  }
+}
+
+function residentHealthDetail(data) {
+  const resident = (data.linkedResidents || [])[0] || {};
+  const vitals = resident.vitals || {};
+  const alerts = getResidentAlerts(resident, data);
+  return `
+    <p class="note">${escapeHtml(resident.note || data.residentInfo.healthStatus)}</p>
+    <div class="vitals-grid">
+      <div class="mini-item"><span>Heart Rate</span><strong>${escapeHtml(vitals.heartRate || '-')} bpm</strong></div>
+      <div class="mini-item"><span>Blood Pressure</span><strong>${escapeHtml(vitals.bloodPressure || '-')}</strong></div>
+      <div class="mini-item"><span>Oxygen</span><strong>${escapeHtml(vitals.oxygen || '-')}%</strong></div>
+      <div class="mini-item"><span>Temperature</span><strong>${escapeHtml(vitals.temperature || '-')} C</strong></div>
+    </div>
+    <h3>Recent Alerts</h3>
+    <div class="space-y">
+      ${alerts.map(alert => `<div class="alert-item"><div><strong>${escapeHtml(alert.type || 'Care Alert')}</strong><br><span class="note">${escapeHtml(alert.message || alert.issue)}</span></div><span class="status ${statusClass(alert.level)}">${escapeHtml(alert.level)}</span></div>`).join('') || '<p class="note">No active alerts.</p>'}
+    </div>
+  `;
+}
+
+function residentMedicationDetail(data) {
+  const resident = (data.linkedResidents || [])[0] || {};
+  return `
+    <p class="note">${escapeHtml(data.residentInfo.nextMedication)}</p>
+    <div class="space-y">
+      ${(resident.medications || []).map(medication => `
+        <div class="alert-item">
+          <div><strong>${escapeHtml(medication.name)}</strong><br><span class="note">${escapeHtml(medication.dosage)} - ${escapeHtml(medication.time)}</span></div>
+          <span class="status ${statusClass(medication.status)}">${escapeHtml(medication.status)}</span>
+        </div>
+      `).join('') || '<p class="note">No medication schedule recorded.</p>'}
+    </div>
+  `;
+}
+
+function residentReminderDetail(data) {
+  return `
+    <p class="note">${escapeHtml(data.residentInfo.reminders)}</p>
+    <div class="space-y">
+      ${(data.schedule || []).map(item => renderScheduleMiniItem(item)).join('')}
+    </div>
+  `;
+}
+
+function residentFamilyContactDetail(data) {
+  const resident = (data.linkedResidents || [])[0] || {};
+  return `
+    <p class="note">Family and emergency contact information for this resident.</p>
+    <div class="space-y">
+      <div class="mini-item"><span>Primary Contact</span><strong>${escapeHtml(data.residentInfo.familyContact)}</strong></div>
+      <div class="mini-item"><span>Resident</span><strong>${escapeHtml(resident.name || 'Resident')}</strong></div>
+      <div class="mini-item"><span>Room</span><strong>${escapeHtml(resident.room || '-')}</strong></div>
+    </div>
+  `;
+}
+
+function renderScheduleMiniItem(item) {
+  return `
+    <div class="mini-item">
+      <span>${escapeHtml(item.time)} - ${escapeHtml(item.label)}</span>
+      <span>
+        <span class="status ${statusClass(item.status || 'Pending')}">${escapeHtml(item.status || 'Pending')}</span>
+        ${item.completedBy ? `<small class="note"> by ${escapeHtml(item.completedBy)}</small>` : ''}
+      </span>
+    </div>
+  `;
+}
+
+function renderScheduleRows(schedule, options = {}) {
+  return (schedule || []).map(item => `
+    <div class="alert-item schedule-row ${item.status === 'Completed' ? 'schedule-done' : ''}">
+      <div>
+        <strong>${escapeHtml(item.time)}</strong><br>
+        <span>${escapeHtml(item.label)}</span>
+        ${item.details ? `<br><span class="note">${escapeHtml(item.details)}</span>` : ''}
+        ${item.resident ? `<br><small class="note">For ${escapeHtml(item.resident)}</small>` : ''}
+        ${item.completedAt ? `<br><small class="note">Completed by ${escapeHtml(item.completedBy)} - ${formatRecordTime(item.completedAt)}</small>` : ''}
+      </div>
+      <div class="schedule-actions">
+        <span class="status ${statusClass(item.status || 'Pending')}">${escapeHtml(item.status || 'Pending')}</span>
+        ${options.canComplete ? `<button class="view-btn" type="button" data-schedule-done="${item.id}" ${item.status === 'Completed' ? 'disabled' : ''}>${item.status === 'Completed' ? 'Done' : 'Mark Done'}</button>` : ''}
+      </div>
+    </div>
+  `).join('') || '<p class="note">No schedule items available.</p>';
+}
+
+function attachScheduleDoneHandlers(data) {
+  document.querySelectorAll('[data-schedule-done]').forEach(button => {
+    button.addEventListener('click', () => markScheduleDone(data, Number(button.dataset.scheduleDone)));
+  });
+}
+
+async function markScheduleDone(data, scheduleId) {
+  const response = await fetch(`/api/schedule/${scheduleId}/done`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to complete schedule item.');
+    return;
+  }
+
+  data.schedule = result.schedule;
+  renderCaregiverScheduleSection(data);
+}
+
+function showResidentDetailModal(title, detailHtml) {
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="residentSummaryModal" role="dialog" aria-modal="true">
+      <div class="modal-box resident-update-modal">
+        <h2>${escapeHtml(title)}</h2>
+        <div>${detailHtml}</div>
+        <div style="margin-top:18px;display:flex;justify-content:flex-end;">
+          <button class="btn" type="button" id="closeResidentSummaryModal">Close</button>
+        </div>
+      </div>
+    </div>
+  `);
+  document.getElementById('closeResidentSummaryModal').addEventListener('click', () => {
+    document.getElementById('residentSummaryModal').remove();
+  });
+}
+
+function showResidentMessagesModal(data) {
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="residentMessagesModal" role="dialog" aria-modal="true">
+      <div class="modal-box resident-update-modal">
+        <div id="residentMessagesModalContent"></div>
+      </div>
+    </div>
+  `);
+  renderFamilyMessagePanel(data, 'resident', {
+    container: document.getElementById('residentMessagesModalContent'),
+    modal: true
+  });
+}
+
+function renderFamilyMessagePanel(data, viewerRole, options = {}) {
+  const container = options.container || document.querySelector('.page .container');
+  if (!container) return;
+
+  const existing = document.getElementById('familyMessagePanel');
+  if (existing) existing.remove();
+
+  const linkedResident = (data.linkedResidents || [])[0];
+  if (!linkedResident) return;
+
+  const familyOptions = viewerRole === 'resident'
+    ? [...new Map((data.familyMessages || []).map(message => [message.familyEmail, message])).values()]
+    : [];
+  const defaultFamilyEmail = viewerRole === 'resident' && familyOptions[0] ? familyOptions[0].familyEmail : '';
+
+  container.insertAdjacentHTML('beforeend', `
+    <section class="card" id="familyMessagePanel" style="margin-top:22px;">
+      <div class="panel-top" style="margin-bottom:12px;">
+        <div>
+          <h2 style="margin:0">Messages</h2>
+          <p class="note">${viewerRole === 'family' ? `Message ${escapeHtml(linkedResident.name)} directly.` : 'Reply to linked family members.'}</p>
+        </div>
+        ${options.modal ? '<button class="btn btn-outline" type="button" id="closeMessagePanel">Close</button>' : ''}
+      </div>
+      <div class="message-thread" id="familyMessageThread">
+        ${(data.familyMessages || []).map(message => `
+          <div class="message-bubble ${message.senderRole === viewerRole ? 'own' : ''}">
+            <strong>${escapeHtml(message.senderName)}</strong>
+            <p>${escapeHtml(message.message)}</p>
+            <small>${formatRecordTime(message.createdAt)}</small>
+          </div>
+        `).join('') || '<p class="note">No messages yet.</p>'}
+      </div>
+      <form id="familyMessageForm" class="message-form">
+        <input id="familyMessageResident" type="hidden" value="${linkedResident.id}">
+        ${viewerRole === 'resident' ? `
+          <div class="form-group">
+            <label for="familyMessageRecipient">Family Member</label>
+            <select id="familyMessageRecipient" ${familyOptions.length ? '' : 'disabled'}>
+              ${familyOptions.map(option => `<option value="${escapeHtml(option.familyEmail)}">${escapeHtml(option.familyEmail)}</option>`).join('')}
+            </select>
+          </div>
+        ` : `<input id="familyMessageRecipient" type="hidden" value="${escapeHtml(defaultFamilyEmail)}">`}
+        <div class="form-group">
+          <label for="familyMessageText">Message</label>
+          <textarea id="familyMessageText" required placeholder="Write a message"></textarea>
+        </div>
+        <button class="btn" type="submit" ${viewerRole === 'resident' && !familyOptions.length ? 'disabled' : ''}>Send Message</button>
+        <p class="success" id="familyMessageStatus" aria-live="polite"></p>
+      </form>
+    </section>
+  `);
+
+  const closeButton = document.getElementById('closeMessagePanel');
+  if (closeButton) {
+    closeButton.addEventListener('click', () => {
+      const modal = document.getElementById('residentMessagesModal');
+      if (modal) modal.remove();
+    });
+  }
+
+  document.getElementById('familyMessageForm').addEventListener('submit', event => submitFamilyMessage(event, data, viewerRole));
+}
+
+async function submitFamilyMessage(event, data, viewerRole) {
+  event.preventDefault();
+
+  const payload = {
+    residentId: document.getElementById('familyMessageResident').value,
+    familyEmail: document.getElementById('familyMessageRecipient').value,
+    message: document.getElementById('familyMessageText').value
+  };
+
+  const response = await fetch('/api/messages', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to send message.');
+    return;
+  }
+
+  data.familyMessages = [...(data.familyMessages || []), result.message];
+  if (viewerRole === 'resident' && document.getElementById('residentMessagesModal')) {
+    showResidentMessagesModal(data);
+  } else {
+    renderFamilyMessagePanel(data, viewerRole);
+  }
+  const status = document.getElementById('familyMessageStatus');
+  if (status) status.textContent = 'Message sent.';
 }
 
 async function loadDashboardPage() {
@@ -433,6 +1126,7 @@ async function loadDashboardPage() {
       response: alert.response || ''
     }));
     caregiverResidents = data.caregiverAssignments || [];
+    currentCaregiverShift = data.currentCaregiverShift || null;
   }
   if (page === 'admin-dashboard.html') {
     renderAdminDashboard(data);
@@ -449,18 +1143,29 @@ async function loadDashboardPage() {
 
 function setupAdminSidebarHandlers() {
   document.querySelectorAll('.sidebar a').forEach(link => {
-    link.addEventListener('click', (e) => {
+    link.addEventListener('click', async (e) => {
       if (link.classList.contains('residents')) {
         return;
       }
 
       e.preventDefault();
+      if (!link.classList.contains('shift-nav') && currentCaregiverShift && currentCaregiverShift.status !== 'Working') {
+        alert('Please start your shift before opening caregiver work areas.');
+        renderCaregiverShiftDashboard(data);
+        return;
+      }
       document.querySelectorAll('.sidebar a').forEach(l => l.classList.remove('active'));
       link.classList.add('active');
 
       if (link.classList.contains('medication')) {
         showSection('medication');
+      } else if (link.classList.contains('caregivers')) {
+        renderAdminCaregiversSection(adminDashboardData);
       } else if (link.classList.contains('alerts')) {
+        const refreshedData = await fetchDashboardData();
+        if (refreshedData) {
+          adminDashboardData = refreshedData;
+        }
         showSection('alerts');
       } else if (link.classList.contains('schedules')) {
         showSection('schedules');
@@ -661,6 +1366,444 @@ function residentOptions(residentsList, selectedId) {
 function formatRecordTime(value) {
   if (!value) return 'Just now';
   return new Date(value).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function formatShiftDateTime(value) {
+  if (!value) return 'Not recorded';
+  return new Date(value).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' });
+}
+
+function shiftDuration(startedAt, endedAt) {
+  if (!startedAt) return '0 min';
+  const end = endedAt ? new Date(endedAt) : new Date();
+  const minutes = Math.max(0, Math.round((end - new Date(startedAt)) / 60000));
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  return hours ? `${hours}h ${remainder}m` : `${remainder}m`;
+}
+
+function caregiverShiftStatusClass(status) {
+  return String(status || '').toLowerCase() === 'working' ? 'completed' : 'scheduled';
+}
+
+function renderCaregiverPresenceTable(caregivers) {
+  return `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Caregiver</th><th>Area</th><th>Status</th><th>Working Time</th><th>Duration</th></tr>
+        </thead>
+        <tbody>
+          ${(caregivers || []).map(caregiver => `
+            <tr>
+              <td><strong>${escapeHtml(caregiver.name)}</strong><br><small class="note">${escapeHtml(caregiver.email)}</small></td>
+              <td>${escapeHtml(caregiver.assignedArea || 'General Care')}</td>
+              <td><span class="status ${caregiverShiftStatusClass(caregiver.status)}">${escapeHtml(caregiver.status)}</span></td>
+              <td>${escapeHtml(caregiver.shiftLabel || 'Not scheduled')}</td>
+              <td>${caregiver.startedAt ? escapeHtml(shiftDuration(caregiver.startedAt, caregiver.endedAt)) : '-'}</td>
+            </tr>
+          `).join('') || '<tr><td colspan="5">No caregivers have been onboarded yet.</td></tr>'}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function renderAdminCaregiversSection(data) {
+  const main = document.querySelector('.dashboard-content');
+  if (!main || !data) return;
+
+  const caregivers = data.caregiverStatus || [];
+  const activeCount = caregivers.filter(caregiver => caregiver.status === 'Working').length;
+  const offDutyCount = Math.max(0, caregivers.length - activeCount);
+  const openShiftCount = (data.openShifts || []).filter(shift => !shift.assignedStaffId && shift.status !== 'Cancelled').length;
+
+  main.innerHTML = `
+    <div class="card panel-top">
+      <div>
+        <h1 style="margin:0">Caregivers</h1>
+        <p class="note">See who is present, where they are assigned, and when their shift started or finished.</p>
+      </div>
+    </div>
+    <div class="stats-grid caregiver-filter-grid">
+      ${renderCaregiverStatButton('working', 'Working Now', activeCount, 'ON', true)}
+      ${renderCaregiverStatButton('off', 'Off Duty', offDutyCount, 'OFF')}
+      ${renderCaregiverStatButton('total', 'Total Caregivers', caregivers.length, 'CG')}
+      ${renderCaregiverStatButton('open', 'Open Shifts', openShiftCount, 'HR')}
+    </div>
+    <div id="caregiverListPanel"></div>
+  `;
+
+  main.querySelectorAll('[data-caregiver-view]').forEach(button => {
+    button.addEventListener('click', () => renderAdminCaregiverList(data, button.dataset.caregiverView));
+  });
+
+  renderAdminCaregiverList(data, 'working');
+}
+
+function renderCaregiverStatButton(view, label, count, icon, active) {
+  return `
+    <button class="card stat-card stat-button ${active ? 'active' : ''}" type="button" data-caregiver-view="${view}">
+      <div><h3>${label}</h3><strong>${count}</strong></div>
+      <div class="icon-box">${icon}</div>
+    </button>
+  `;
+}
+
+function setCaregiverStatActive(view) {
+  document.querySelectorAll('[data-caregiver-view]').forEach(button => {
+    button.classList.toggle('active', button.dataset.caregiverView === view);
+  });
+}
+
+function renderAdminCaregiverList(data, view) {
+  const panel = document.getElementById('caregiverListPanel');
+  if (!panel) return;
+
+  const caregivers = data.caregiverStatus || [];
+  const list = view === 'working'
+    ? caregivers.filter(caregiver => caregiver.status === 'Working')
+    : view === 'off'
+      ? caregivers.filter(caregiver => caregiver.status !== 'Working')
+      : caregivers;
+
+  setCaregiverStatActive(view);
+
+  if (view === 'open') {
+    renderOpenShiftList(panel, data);
+    return;
+  }
+
+  const titles = {
+    working: 'Working Now',
+    off: 'Off Duty Caregivers',
+    total: 'Total Caregivers'
+  };
+
+  panel.innerHTML = `
+    <div class="card" style="margin-top:22px;">
+      <h2>${titles[view] || 'Caregivers'}</h2>
+      ${renderCaregiverPresenceTable(list)}
+    </div>
+    <div class="card" style="margin-top:22px;">
+      <h2>Recent Shift History</h2>
+      <div class="space-y">
+        ${(data.shiftHistory || []).slice(0, 6).map(shift => `
+          <div class="mini-item">
+            <span><strong>${escapeHtml(shift.caregiverName)}</strong><br><small class="note">${escapeHtml(shift.assignedArea)} - ${escapeHtml(shift.status)}${shift.day ? ` - ${escapeHtml(shift.day)}` : ''}</small>${shift.details ? `<br><small class="note">${escapeHtml(shift.details)}</small>` : ''}</span>
+            <span>${formatShiftDateTime(shift.startedAt)} - ${shift.endedAt ? formatShiftDateTime(shift.endedAt) : 'Now'}</span>
+            <span class="schedule-actions">
+              <button class="view-btn" type="button" data-edit-history-shift="${shift.id}">Edit</button>
+              <button class="review-btn danger-action" type="button" data-cancel-history-shift="${shift.id}">Cancel</button>
+            </span>
+          </div>
+        `).join('') || '<p class="note">No shift history yet.</p>'}
+      </div>
+    </div>
+  `;
+
+  panel.querySelectorAll('[data-edit-history-shift]').forEach(button => {
+    button.addEventListener('click', () => showShiftHistoryEditor(data, Number(button.dataset.editHistoryShift)));
+  });
+  panel.querySelectorAll('[data-cancel-history-shift]').forEach(button => {
+    button.addEventListener('click', () => cancelShiftHistory(data, Number(button.dataset.cancelHistoryShift)));
+  });
+}
+
+function renderOpenShiftList(panel, data, selectedShiftId) {
+  const shifts = data.openShifts || [];
+  const caregivers = data.caregiverStatus || [];
+  const selectedShift = shifts.find(shift => shift.id === selectedShiftId) || shifts.find(shift => !shift.assignedStaffId) || shifts[0];
+
+  panel.innerHTML = `
+    <div class="grid onboard-grid" style="margin-top:22px;">
+      <div class="card">
+        <h2>Open Shift List</h2>
+        <div class="space-y">
+          ${shifts.map(shift => {
+            const assigned = caregivers.find(caregiver => caregiver.id === shift.assignedStaffId);
+            return `
+              <button class="shift-list-item ${selectedShift && selectedShift.id === shift.id ? 'active' : ''}" type="button" data-select-shift="${shift.id}">
+                <span><strong>${escapeHtml(shift.title)}</strong><br><small>${escapeHtml(shift.day || 'Today')} - ${escapeHtml(shift.assignedArea)} - ${escapeHtml(shift.plannedShift)}</small>${shift.details ? `<br><small>${escapeHtml(shift.details)}</small>` : ''}${renderShiftClientsSummary(data, shift)}</span>
+                <span class="status ${shift.status === 'Cancelled' ? 'critical' : assigned ? 'completed' : 'pending'}">${shift.status === 'Cancelled' ? 'Cancelled' : assigned ? escapeHtml(assigned.name) : 'Open'}</span>
+              </button>
+            `;
+          }).join('') || '<p class="note">No shifts configured yet.</p>'}
+        </div>
+      </div>
+      <form class="card" id="assignShiftForm">
+        <h2>Assign Shift</h2>
+        ${selectedShift ? `
+          <input id="assignShiftId" type="hidden" value="${escapeHtml(selectedShift.id)}">
+          <div class="form-group" style="margin-top:16px;">
+            <label for="assignShiftTitle">Shift Title</label>
+            <input id="assignShiftTitle" value="${escapeHtml(selectedShift.title || '')}" required>
+          </div>
+          <div class="form-group">
+            <label for="assignDay">Day</label>
+            <input id="assignDay" value="${escapeHtml(selectedShift.day || 'Today')}" placeholder="Today, Tomorrow, Monday" required>
+          </div>
+          <div class="form-group" style="margin-top:16px;">
+            <label for="assignStaffId">Caregiver</label>
+            <select id="assignStaffId" required>
+              <option value="">Choose caregiver</option>
+              ${caregivers.map(caregiver => `<option value="${escapeHtml(caregiver.id)}" ${selectedShift.assignedStaffId === caregiver.id ? 'selected' : ''}>${escapeHtml(caregiver.name)} - ${escapeHtml(caregiver.status)}</option>`).join('')}
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="assignArea">Area</label>
+            <input id="assignArea" value="${escapeHtml(selectedShift.assignedArea || '')}" required>
+          </div>
+          <div class="form-group">
+            <label for="assignTime">Shift Time</label>
+            <input id="assignTime" value="${escapeHtml(selectedShift.plannedShift || '')}" placeholder="07:00 AM - 03:00 PM" required>
+          </div>
+          <div class="form-group">
+            <label for="assignDetails">Details</label>
+            <textarea id="assignDetails" placeholder="Shift notes, handover details, care focus">${escapeHtml(selectedShift.details || '')}</textarea>
+          </div>
+          <div class="form-group">
+            <label>Assigned Clients</label>
+            <div class="client-checklist">
+              ${(data.residents || []).map(resident => `
+                <label class="client-check">
+                  <input type="checkbox" value="${resident.id}" data-assign-client ${selectedShift.assignedResidentIds && selectedShift.assignedResidentIds.includes(resident.id) ? 'checked' : ''}>
+                  <span>${escapeHtml(resident.name)} <small>Room ${escapeHtml(resident.room)}</small></span>
+                </label>
+              `).join('')}
+            </div>
+          </div>
+          <div class="shift-actions">
+            <button class="btn" type="submit">Save Shift</button>
+            <button class="btn btn-outline danger-outline" type="button" id="cancelOpenShiftButton">Cancel Shift</button>
+          </div>
+          <p class="success" id="assignShiftMessage" aria-live="polite"></p>
+        ` : '<p class="note">Add an open shift before assigning staff.</p>'}
+      </form>
+    </div>
+  `;
+
+  panel.querySelectorAll('[data-select-shift]').forEach(button => {
+    button.addEventListener('click', () => renderOpenShiftList(panel, data, button.dataset.selectShift));
+  });
+
+  const form = document.getElementById('assignShiftForm');
+  if (form && selectedShift) {
+    form.addEventListener('submit', event => submitShiftAssignment(event, data));
+    document.getElementById('cancelOpenShiftButton').addEventListener('click', () => cancelOpenShift(data, selectedShift.id));
+  }
+}
+
+function renderShiftClientsSummary(data, shift) {
+  const ids = shift.assignedResidentIds || [];
+  if (!ids.length) return '';
+  const names = ids
+    .map(id => (data.residents || []).find(resident => resident.id === id))
+    .filter(Boolean)
+    .map(resident => resident.name);
+  return names.length ? `<br><small>Clients: ${escapeHtml(names.join(', '))}</small>` : '';
+}
+
+async function submitShiftAssignment(event, data) {
+  event.preventDefault();
+
+  const payload = {
+    shiftId: document.getElementById('assignShiftId').value,
+    title: document.getElementById('assignShiftTitle').value,
+    day: document.getElementById('assignDay').value,
+    staffId: document.getElementById('assignStaffId').value,
+    assignedArea: document.getElementById('assignArea').value,
+    plannedShift: document.getElementById('assignTime').value,
+    details: document.getElementById('assignDetails').value,
+    residentIds: Array.from(document.querySelectorAll('[data-assign-client]:checked')).map(input => Number(input.value))
+  };
+
+  const response = await fetch('/api/shifts/assign', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to assign shift.');
+    return;
+  }
+
+  data.openShifts = result.openShifts || data.openShifts;
+  data.staff = result.staffList || data.staff;
+  data.caregiverStatus = (data.caregiverStatus || []).map(caregiver => caregiver.id === result.staff.id ? result.staff : caregiver);
+  renderAdminCaregiversSection(data);
+  renderAdminCaregiverList(data, 'open');
+  const message = document.getElementById('assignShiftMessage');
+  if (message) {
+    message.textContent = `${result.staff.name} has been assigned to ${payload.plannedShift}.`;
+  }
+}
+
+async function cancelOpenShift(data, shiftId) {
+  if (!confirm('Cancel this shift?')) return;
+  const response = await fetch(`/api/open-shifts/${encodeURIComponent(shiftId)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin'
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to cancel shift.');
+    return;
+  }
+  data.openShifts = result.openShifts || data.openShifts;
+  data.staff = result.staffList || data.staff;
+  renderAdminCaregiversSection(data);
+  renderAdminCaregiverList(data, 'open');
+}
+
+function showShiftHistoryEditor(data, shiftId) {
+  const shift = (data.shiftHistory || []).find(item => item.id === shiftId);
+  if (!shift) return;
+  document.querySelectorAll('.modal-bg').forEach(modal => modal.remove());
+  document.body.insertAdjacentHTML('beforeend', `
+    <div class="modal-bg" id="shiftHistoryEditorModal" role="dialog" aria-modal="true">
+      <div class="modal-box">
+        <h2>Edit Shift</h2>
+        <form id="shiftHistoryEditorForm">
+          <div class="form-group"><label for="historyShiftDay">Day</label><input id="historyShiftDay" value="${escapeHtml(shift.day || 'Today')}" required></div>
+          <div class="form-group"><label for="historyShiftArea">Area</label><input id="historyShiftArea" value="${escapeHtml(shift.assignedArea || '')}" required></div>
+          <div class="form-group"><label for="historyShiftStarted">Started</label><input id="historyShiftStarted" value="${escapeHtml(shift.startedAt || '')}" required></div>
+          <div class="form-group"><label for="historyShiftEnded">Ended</label><input id="historyShiftEnded" value="${escapeHtml(shift.endedAt || '')}" placeholder="Leave blank if still working"></div>
+          <div class="form-group"><label for="historyShiftStatus">Status</label><select id="historyShiftStatus"><option ${shift.status === 'Working' ? 'selected' : ''}>Working</option><option ${shift.status === 'Completed' ? 'selected' : ''}>Completed</option><option ${shift.status === 'Cancelled' ? 'selected' : ''}>Cancelled</option></select></div>
+          <div class="form-group"><label for="historyShiftDetails">Details</label><textarea id="historyShiftDetails">${escapeHtml(shift.details || '')}</textarea></div>
+          <div class="shift-actions">
+            <button class="btn" type="submit">Save Shift</button>
+            <button class="btn btn-outline" type="button" id="closeShiftHistoryEditor">Close</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  `);
+  document.getElementById('closeShiftHistoryEditor').addEventListener('click', () => document.getElementById('shiftHistoryEditorModal').remove());
+  document.getElementById('shiftHistoryEditorForm').addEventListener('submit', event => submitShiftHistoryEdit(event, data, shiftId));
+}
+
+async function submitShiftHistoryEdit(event, data, shiftId) {
+  event.preventDefault();
+  const payload = {
+    day: document.getElementById('historyShiftDay').value,
+    assignedArea: document.getElementById('historyShiftArea').value,
+    startedAt: document.getElementById('historyShiftStarted').value,
+    endedAt: document.getElementById('historyShiftEnded').value,
+    status: document.getElementById('historyShiftStatus').value,
+    details: document.getElementById('historyShiftDetails').value
+  };
+  const response = await fetch(`/api/shift-history/${shiftId}`, {
+    method: 'PUT',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to save shift.');
+    return;
+  }
+  data.shiftHistory = result.shiftHistory || data.shiftHistory;
+  document.getElementById('shiftHistoryEditorModal').remove();
+  renderAdminCaregiverList(data, 'working');
+}
+
+async function cancelShiftHistory(data, shiftId) {
+  if (!confirm('Cancel this shift record?')) return;
+  const response = await fetch(`/api/shift-history/${shiftId}`, {
+    method: 'DELETE',
+    credentials: 'same-origin'
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to cancel shift.');
+    return;
+  }
+  data.shiftHistory = result.shiftHistory || data.shiftHistory;
+  renderAdminCaregiverList(data, 'working');
+}
+
+function renderCaregiverShiftDashboard(data) {
+  const content = document.querySelector('.dashboard-content');
+  if (!content) return;
+
+  currentCaregiverShift = data.currentCaregiverShift || currentCaregiverShift;
+  const shift = currentCaregiverShift || {};
+  const isWorking = shift.status === 'Working';
+  updateCaregiverShiftGate(isWorking);
+
+  content.innerHTML = `
+    <div class="card panel-top">
+      <div>
+        <h1 style="margin:0">My Shift</h1>
+        <p class="note">Start your shift when you arrive and end it when your handover is complete.</p>
+      </div>
+      <span class="status ${caregiverShiftStatusClass(shift.status)}">${escapeHtml(shift.status || 'Off Duty')}</span>
+    </div>
+    <div class="grid ${isWorking ? 'onboard-grid' : ''}">
+      <div class="card shift-card">
+        <h2>${isWorking ? 'Shift in Progress' : 'Ready to Start'}</h2>
+        <div class="shift-clock">${isWorking ? escapeHtml(shiftDuration(shift.startedAt)) : 'Off duty'}</div>
+        <div class="space-y">
+          <div class="mini-item"><span>Assigned Area</span><strong>${escapeHtml(shift.assignedArea || 'General Care')}</strong></div>
+          <div class="mini-item"><span>Started</span><strong>${shift.startedAt ? formatShiftDateTime(shift.startedAt) : 'Not started'}</strong></div>
+          <div class="mini-item"><span>Working Time</span><strong>${escapeHtml(shift.shiftLabel || 'No active shift')}</strong></div>
+        </div>
+        <div class="shift-actions">
+          <button class="btn" id="startShiftButton" type="button" ${isWorking ? 'disabled' : ''}>Start Shift</button>
+          <button class="btn btn-outline" id="endShiftButton" type="button" ${isWorking ? '' : 'disabled'}>End Shift</button>
+        </div>
+        <p class="success" id="shiftMessage" aria-live="polite"></p>
+      </div>
+      ${isWorking ? `<div class="card">
+        <h2>Today's Focus</h2>
+        <div class="space-y">
+          ${(data.caregiverAssignments || []).slice(0, 4).map(resident => `
+            <div class="alert-item">
+              <div><strong>${escapeHtml(resident.name)}</strong><br><span class="note">Room ${escapeHtml(resident.room)} - ${escapeHtml(resident.medication)}</span></div>
+              <span class="status ${statusClass(resident.status)}">${escapeHtml(resident.status)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>` : ''}
+    </div>
+  `;
+
+  document.getElementById('startShiftButton').addEventListener('click', () => updateCaregiverShift(data, 'start'));
+  document.getElementById('endShiftButton').addEventListener('click', () => updateCaregiverShift(data, 'end'));
+}
+
+function updateCaregiverShiftGate(isWorking) {
+  document.querySelectorAll('.sidebar a:not(.shift-nav)').forEach(link => {
+    link.classList.toggle('shift-locked', !isWorking);
+    link.setAttribute('aria-disabled', isWorking ? 'false' : 'true');
+  });
+}
+
+async function updateCaregiverShift(data, action) {
+  const response = await fetch(`/api/shifts/${action}`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' }
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to update shift.');
+    return;
+  }
+
+  currentCaregiverShift = result.caregiver;
+  data.currentCaregiverShift = result.caregiver;
+  const existing = (data.caregiverStatus || []).filter(caregiver => caregiver.email !== result.caregiver.email);
+  data.caregiverStatus = [result.caregiver, ...existing];
+  renderCaregiverShiftDashboard(data);
+  const message = document.getElementById('shiftMessage');
+  if (message) {
+    message.textContent = action === 'start' ? 'Shift started. Admin can see you are working now.' : 'Shift ended and saved for admin review.';
+  }
 }
 
 function renderCaregiverMedicationSection(data, selectedResidentId) {
@@ -889,6 +2032,158 @@ function renderIncidentSection(data) {
   document.getElementById('incidentForm').addEventListener('submit', event => submitIncidentReport(event, data));
 }
 
+function renderCaregiverScheduleSection(data) {
+  const content = document.querySelector('.dashboard-content');
+  if (!content) return;
+
+  content.innerHTML = `
+    <div class="card panel-top">
+      <div><h1 style="margin:0">Care Schedule</h1><p class="note">Daily schedule for assigned residents.</p></div>
+    </div>
+    <div class="card" style="margin-top:22px;">
+      <h2>Today's Schedule</h2>
+      <div class="space-y">
+        ${renderScheduleRows(data.schedule, { canComplete: true })}
+      </div>
+    </div>
+  `;
+  attachScheduleDoneHandlers(data);
+}
+
+function renderAdminScheduleSection(data) {
+  const main = document.querySelector('.dashboard-content');
+  if (!main) return;
+
+  main.innerHTML = `
+    <div class="card panel-top">
+      <div><h1 style="margin:0">Schedules</h1><p class="note">Create and monitor care schedules for residents.</p></div>
+    </div>
+
+    <div class="grid onboard-grid" style="margin-top:22px;">
+      <form class="card" id="adminScheduleForm">
+        <h2>Create Schedule</h2>
+        <div class="form-group">
+          <label for="newScheduleTime">Time</label>
+          <input id="newScheduleTime" placeholder="Example: 03:30 PM" required>
+        </div>
+        <div class="form-group">
+          <label for="newScheduleTitle">Title</label>
+          <input id="newScheduleTitle" placeholder="Example: Afternoon mobility walk" required>
+        </div>
+        <div class="form-group">
+          <label for="newScheduleResident">Resident</label>
+          <select id="newScheduleResident">
+            <option value="">All residents</option>
+            ${(data.residents || []).map(resident => `<option value="${resident.id}">${escapeHtml(resident.name)} - Room ${escapeHtml(resident.room)}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="newScheduleDetails">Details</label>
+          <textarea id="newScheduleDetails" placeholder="Add instructions for caregivers and residents"></textarea>
+        </div>
+        <button class="btn" type="submit">Create Schedule</button>
+        <p class="success" id="scheduleCreateMessage" aria-live="polite"></p>
+      </form>
+
+      <div class="card">
+        <h2>Today's Schedule</h2>
+        <div class="space-y">
+          ${renderScheduleRows(data.schedule)}
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('adminScheduleForm').addEventListener('submit', event => submitAdminSchedule(event, data));
+}
+
+function renderAdminAlertsSection(data) {
+  const main = document.querySelector('.dashboard-content');
+  if (!main || !data) return;
+
+  main.innerHTML = `
+    <div class="card panel-top">
+      <div><h1 style="margin:0">Alerts</h1><p class="note">View and resolve emergency alerts.</p></div>
+    </div>
+
+    <div class="card" style="margin-top:22px;">
+      <h2>Active Alerts</h2>
+      <div class="space-y">
+        ${(data.alerts || []).map((alert, index) => `
+          <div class="alert-item ${alert.responded ? 'alert-resolved' : ''}">
+            <div>
+              <strong>${escapeHtml(alert.resident)}</strong><br>
+              <span class="note">${escapeHtml(alert.issue)}</span>
+              ${alert.responded ? `<div class="note" style="margin-top:8px;"><strong>Resolved note:</strong> ${escapeHtml(alert.response)}</div>` : ''}
+            </div>
+            <div class="schedule-actions">
+              <span class="status ${alert.responded ? 'completed' : 'pending'}">${alert.responded ? 'Resolved' : 'Open'}</span>
+              <span class="status ${statusClass(alert.level)}">${escapeHtml(alert.level)}</span>
+              <button class="review-btn ${alert.responded ? 'responded' : ''}" type="button" data-admin-alert="${index}">${alert.responded ? 'View / Edit' : 'Resolve'}</button>
+            </div>
+          </div>
+        `).join('') || '<p class="note">No active alerts.</p>'}
+      </div>
+    </div>
+  `;
+
+  main.querySelectorAll('[data-admin-alert]').forEach(button => {
+    button.addEventListener('click', () => respondToAdminAlert(data, Number(button.dataset.adminAlert)));
+  });
+}
+
+async function respondToAdminAlert(data, index) {
+  const alertItem = (data.alerts || [])[index];
+  if (!alertItem) return;
+  const response = prompt(`Resolve alert for ${alertItem.resident}`, alertItem.response || 'Reviewed by admin.');
+  if (!response) return;
+
+  const request = await fetch(`/api/alerts/${alertItem.id}/respond`, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response })
+  });
+  const result = await request.json();
+  if (!request.ok || !result.success) {
+    alert(result.message || 'Unable to resolve alert.');
+    return;
+  }
+
+  data.alerts[index] = result.alert;
+  renderAdminAlertsSection(data);
+}
+
+async function submitAdminSchedule(event, data) {
+  event.preventDefault();
+
+  const payload = {
+    time: document.getElementById('newScheduleTime').value,
+    label: document.getElementById('newScheduleTitle').value,
+    residentId: document.getElementById('newScheduleResident').value,
+    details: document.getElementById('newScheduleDetails').value
+  };
+
+  const response = await fetch('/api/schedule', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to create schedule.');
+    return;
+  }
+
+  data.schedule = result.schedule;
+  renderAdminScheduleSection(data);
+  const message = document.getElementById('scheduleCreateMessage');
+  if (message) {
+    message.textContent = `${result.scheduleItem.label} has been added.`;
+  }
+}
+
 async function submitIncidentReport(event, data) {
   event.preventDefault();
   const payload = {
@@ -918,11 +2213,16 @@ function renderOnboardSection(data) {
   if (!main) return;
 
   const staffList = (data && data.staff) || [];
+  const familyList = (data && data.families) || [];
+  const usersList = (data && data.users) || [];
+  const familyOptions = familyList.map(family => `
+    <option value="${escapeHtml(family.email)}">${escapeHtml(family.name)} - ${escapeHtml(family.email)}</option>
+  `).join('');
   main.innerHTML = `
     <div class="card panel-top">
       <div>
         <h1 style="margin:0">Onboard</h1>
-        <p class="note">Create new residents and staff accounts for the ElderNest system.</p>
+        <p class="note">Create resident, staff, and family accounts, then manage access from one place.</p>
       </div>
     </div>
 
@@ -963,6 +2263,13 @@ function renderOnboardSection(data) {
           <label for="newResidentContact">Emergency Contact</label>
           <input id="newResidentContact" placeholder="Name, relation, phone">
         </div>
+        <div class="form-group">
+          <label for="newResidentFamily">Link Family</label>
+          <select id="newResidentFamily">
+            <option value="">No family linked yet</option>
+            ${familyOptions}
+          </select>
+        </div>
         <button class="btn" type="submit">Onboard Resident</button>
         <p class="success" id="residentOnboardMessage" aria-live="polite"></p>
       </form>
@@ -1000,11 +2307,66 @@ function renderOnboardSection(data) {
           `).join('') || '<p class="note">No staff created yet.</p>'}
         </div>
       </form>
+
+      <form class="card" id="onboardFamilyForm">
+        <h2>New Family</h2>
+        <div class="form-group">
+          <label for="newFamilyName">Family Name</label>
+          <input id="newFamilyName" required>
+        </div>
+        <div class="form-group">
+          <label for="newFamilyRelation">Relation</label>
+          <input id="newFamilyRelation" placeholder="Daughter, son, spouse">
+        </div>
+        <div class="form-group">
+          <label for="newFamilyResident">Relative Resident</label>
+          <select id="newFamilyResident" required>${residentOptions(data.residents || [])}</select>
+        </div>
+        <div class="form-group">
+          <label for="newFamilyEmail">Login Email</label>
+          <input id="newFamilyEmail" type="email" required>
+        </div>
+        <div class="form-group">
+          <label for="newFamilyPassword">Login Password</label>
+          <input id="newFamilyPassword" type="password" minlength="6" required>
+        </div>
+        <button class="btn" type="submit">Create Family Login</button>
+        <p class="success" id="familyOnboardMessage" aria-live="polite"></p>
+        <div class="onboard-staff-list">
+          <h3>Current Families</h3>
+          ${familyList.map(family => `
+            <div class="mini-item">
+              <span><strong>${escapeHtml(family.name)}</strong><br><small class="note">${escapeHtml(family.email)}</small></span>
+              <span>${escapeHtml(family.relation)} - ${escapeHtml(family.resident)}</span>
+            </div>
+          `).join('') || '<p class="note">No family accounts created yet.</p>'}
+        </div>
+      </form>
+
+      <div class="card">
+        <h2>Remove User</h2>
+        <div class="space-y">
+          ${usersList.map(user => `
+            <div class="mini-item">
+              <span>
+                <strong>${escapeHtml(user.name)}</strong><br>
+                <small class="note">${escapeHtml(user.email)} - ${escapeHtml(user.role)}${user.resident ? ` - ${escapeHtml(user.resident)}` : ''}</small>
+              </span>
+              <button class="review-btn danger-action" type="button" data-remove-user="${escapeHtml(user.email)}" ${sessionData && sessionData.user && sessionData.user.email === user.email ? 'disabled' : ''}>Remove</button>
+            </div>
+          `).join('') || '<p class="note">No users found.</p>'}
+        </div>
+        <p class="success" id="removeUserMessage" aria-live="polite"></p>
+      </div>
     </div>
   `;
 
   document.getElementById('onboardResidentForm').addEventListener('submit', submitResidentOnboard);
   document.getElementById('onboardStaffForm').addEventListener('submit', submitStaffOnboard);
+  document.getElementById('onboardFamilyForm').addEventListener('submit', submitFamilyOnboard);
+  document.querySelectorAll('[data-remove-user]').forEach(button => {
+    button.addEventListener('click', () => removeSystemUser(button.dataset.removeUser));
+  });
 }
 
 async function submitResidentOnboard(event) {
@@ -1017,7 +2379,8 @@ async function submitResidentOnboard(event) {
     status: document.getElementById('newResidentStatus').value,
     medication: document.getElementById('newResidentMedication').value,
     carePlan: document.getElementById('newResidentCarePlan').value,
-    emergencyContact: document.getElementById('newResidentContact').value
+    emergencyContact: document.getElementById('newResidentContact').value,
+    familyEmail: document.getElementById('newResidentFamily').value
   };
 
   const response = await fetch('/api/onboard/resident', {
@@ -1036,8 +2399,18 @@ async function submitResidentOnboard(event) {
   }
 
   adminDashboardData.residents.push(result.resident);
+  if (result.linkedFamily) {
+    adminDashboardData.families = (adminDashboardData.families || []).map(family =>
+      family.email === result.linkedFamily.email ? result.linkedFamily : family
+    );
+    adminDashboardData.users = (adminDashboardData.users || []).map(user =>
+      user.email === result.linkedFamily.email ? { ...user, residentId: result.resident.id, resident: result.resident.name } : user
+    );
+  }
   document.getElementById('onboardResidentForm').reset();
-  document.getElementById('residentOnboardMessage').textContent = `${result.resident.name} has been onboarded in room ${result.resident.room}.`;
+  document.getElementById('residentOnboardMessage').textContent = result.linkedFamily
+    ? `${result.resident.name} has been onboarded and linked with ${result.linkedFamily.name}.`
+    : `${result.resident.name} has been onboarded in room ${result.resident.room}.`;
 }
 
 async function submitStaffOnboard(event) {
@@ -1067,8 +2440,77 @@ async function submitStaffOnboard(event) {
 
   adminDashboardData.staff = adminDashboardData.staff || [];
   adminDashboardData.staff.push(result.staff);
+  adminDashboardData.users = adminDashboardData.users || [];
+  adminDashboardData.users.push({
+    email: payload.email.toLowerCase(),
+    role: payload.role,
+    name: payload.name,
+    dashboard: payload.role === 'admin' ? 'admin-dashboard.html' : 'caregiver.html',
+    resident: ''
+  });
   document.getElementById('onboardStaffForm').reset();
   document.getElementById('staffOnboardMessage').textContent = `${result.staff.name} created with Staff ID ${result.staff.id}. They can now log in with the email and password you entered.`;
+}
+
+async function submitFamilyOnboard(event) {
+  event.preventDefault();
+
+  const payload = {
+    name: document.getElementById('newFamilyName').value,
+    relation: document.getElementById('newFamilyRelation').value,
+    residentId: document.getElementById('newFamilyResident').value,
+    email: document.getElementById('newFamilyEmail').value,
+    password: document.getElementById('newFamilyPassword').value
+  };
+
+  const response = await fetch('/api/onboard/family', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to create family login.');
+    return;
+  }
+
+  adminDashboardData.families = adminDashboardData.families || [];
+  adminDashboardData.families.push(result.family);
+  adminDashboardData.users = adminDashboardData.users || [];
+  adminDashboardData.users.push(result.user);
+  document.getElementById('onboardFamilyForm').reset();
+  document.getElementById('familyOnboardMessage').textContent = `${result.family.name} can now view updates for ${result.family.resident}.`;
+}
+
+async function removeSystemUser(email) {
+  if (!email) return;
+  const confirmed = confirm(`Remove ${email} from the ElderNest system?`);
+  if (!confirmed) return;
+
+  const response = await fetch(`/api/users/${encodeURIComponent(email)}`, {
+    method: 'DELETE',
+    credentials: 'same-origin'
+  });
+  const result = await response.json();
+
+  if (!response.ok || !result.success) {
+    alert(result.message || 'Unable to remove user.');
+    return;
+  }
+
+  adminDashboardData.users = (adminDashboardData.users || []).filter(user => user.email !== result.removed.email);
+  adminDashboardData.staff = (adminDashboardData.staff || []).filter(staff => staff.email !== result.removed.email);
+  adminDashboardData.families = (adminDashboardData.families || []).filter(family => family.email !== result.removed.email);
+  adminDashboardData.caregiverStatus = (adminDashboardData.caregiverStatus || []).filter(caregiver => caregiver.email !== result.removed.email);
+  renderOnboardSection(adminDashboardData);
+  const message = document.getElementById('removeUserMessage');
+  if (message) {
+    message.textContent = `${result.removed.name} has been removed.`;
+  }
 }
 
 function renderResidentEditor(resident) {
@@ -1225,7 +2667,9 @@ function setupCaregiverSidebarHandlers(data) {
       document.querySelectorAll('.sidebar a').forEach(l => l.classList.remove('active'));
       link.classList.add('active');
 
-      if (link.classList.contains('residents-nav')) {
+      if (link.classList.contains('shift-nav')) {
+        renderCaregiverShiftDashboard(data);
+      } else if (link.classList.contains('residents-nav')) {
         renderCaregiverResidentWorkspace(data);
       } else if (link.classList.contains('medication-nav')) {
         renderCaregiverMedicationSection(data);
@@ -1261,24 +2705,12 @@ function setupCaregiverSidebarHandlers(data) {
           </div>
         `;
       } else if (link.classList.contains('schedules-nav')) {
-        content.innerHTML = `
-          <div class="card panel-top">
-            <div><h1 style="margin:0">Care Schedule</h1><p class="note">Daily schedule for assigned residents.</p></div>
-          </div>
-          <div class="card" style="margin-top:22px;">
-            <h2>Today's Schedule</h2>
-            <div class="table-card">
-              ${data.schedule.map(item => `
-                <div class="alert-item"><strong>${item.time}</strong><p>${item.label}</p></div>
-              `).join('')}
-            </div>
-          </div>
-        `;
+        renderCaregiverScheduleSection(data);
       }
     });
   });
 
-  document.querySelector('.residents-nav').click();
+  document.querySelector('.shift-nav').click();
 }
 
 async function initAuthLinks() {
@@ -1368,23 +2800,23 @@ async function redirectToDashboard() {
 document.addEventListener('DOMContentLoaded', initCommon);
 
 const residents = [
-  { name: "John", room: "A-12", status: "Stable", medication: "Due in 15 mins", note: "Resident is stable and under regular monitoring." },
-  { name: "Melinda", room: "B-05", status: "Observation", medication: "Missed 8:00 AM", note: "Needs medication follow-up from caregiver." },
-  { name: "Michael", room: "C-03", status: "Critical", medication: "Completed", note: "Requires close monitoring due to abnormal heart rate." },
-  { name: "Billy", room: "A-08", status: "Stable", medication: "Due at 1:00 PM", note: "Resident condition is normal today." }
+  { name: "Dorji Wangmo", room: "A-12", status: "Stable", medication: "Vitamin D due in 15 mins", note: "Resident is stable and under regular monitoring." },
+  { name: "Pema Choden", room: "B-05", status: "Observation", medication: "Blood Pressure Tablet missed 8:00 AM", note: "Needs medication follow-up from caregiver." },
+  { name: "Sonam Tashi", room: "C-03", status: "Critical", medication: "Heart Medicine completed", note: "Requires close monitoring due to abnormal heart rate." },
+  { name: "Karma Dema", room: "A-08", status: "Stable", medication: "Calcium Tablet due at 1:00 PM", note: "Resident condition is normal today." }
 ];
 
 let medications = [
-  { resident: "John", medicine: "Vitamin D", time: "1:00 PM", status: "Pending" },
-  { resident: "Melinda", medicine: "Blood Pressure Tablet", time: "8:00 AM", status: "Pending" },
-  { resident: "Michael", medicine: "Heart Medicine", time: "10:00 AM", status: "Completed" },
-  { resident: "Billy", medicine: "Calcium Tablet", time: "1:00 PM", status: "Pending" }
+  { resident: "Dorji Wangmo", medicine: "Vitamin D", time: "1:00 PM", status: "Pending" },
+  { resident: "Pema Choden", medicine: "Blood Pressure Tablet", time: "8:00 AM", status: "Missed" },
+  { resident: "Sonam Tashi", medicine: "Heart Medicine", time: "10:00 AM", status: "Completed" },
+  { resident: "Karma Dema", medicine: "Calcium Tablet", time: "1:00 PM", status: "Pending" }
 ];
 
 let alerts = [
-  { resident: "John", issue: "Fall detected in Room A-12", level: "Critical" },
-  { resident: "Melinda", issue: "Medication missed", level: "High" },
-  { resident: "Michael", issue: "Abnormal heart rate", level: "Critical" }
+  { resident: "Dorji Wangmo", issue: "Fall detected in Room A-12", level: "Critical" },
+  { resident: "Pema Choden", issue: "Medication missed", level: "High" },
+  { resident: "Sonam Tashi", issue: "Abnormal heart rate", level: "Critical" }
 ];
 
 function viewResidentDetails(index) {
@@ -1392,37 +2824,52 @@ function viewResidentDetails(index) {
   if (!resident) return;
 
   const modalId = 'residentDetailModal';
-  const contactsHtml = (resident.contacts || resident.contactList || []).map(c => `
+  const contactList = resident.contacts || resident.contactList || [];
+  const contactsHtml = contactList.length ? contactList.map(c => `
       <div style="margin-bottom:6px;">
-        <strong>${c.name}</strong> ${c.relation ? `(${c.relation})` : ''}<br>
-        <a href="tel:${c.phone || '#'}">${c.phone || 'No phone'}</a>
+        <strong>${escapeHtml(c.name)}</strong> ${c.relation ? `(${escapeHtml(c.relation)})` : ''}<br>
+        <a href="tel:${escapeHtml(c.phone || '#')}">${escapeHtml(c.phone || 'No phone')}</a>
       </div>
-    `).join('') || '<div class="note">No contacts on file.</div>';
+    `).join('') : `<div class="note">${escapeHtml(resident.emergencyContact || 'No contacts on file.')}</div>`;
 
-  const allergiesHtml = (resident.allergies || []).length ? `<ul>${(resident.allergies || []).map(a => `<li>${a}</li>`).join('')}</ul>` : '<div class="note">No known allergies.</div>';
+  const allergies = Array.isArray(resident.allergies)
+    ? resident.allergies
+    : String(resident.allergies || '').split(',').map(item => item.trim()).filter(Boolean);
+  const allergiesHtml = allergies.length
+    ? `<ul class="detail-list">${allergies.map(a => `<li>${escapeHtml(a)}</li>`).join('')}</ul>`
+    : '<div class="note">No known allergies.</div>';
 
-  const vitalsHtml = (resident.recentVitals || resident.vitals || []).length ? `
+  const vitalsList = Array.isArray(resident.recentVitals)
+    ? resident.recentVitals
+    : resident.vitals ? [
+      { label: 'Heart Rate', value: `${resident.vitals.heartRate} bpm` },
+      { label: 'Blood Pressure', value: resident.vitals.bloodPressure },
+      { label: 'Oxygen', value: `${resident.vitals.oxygen}%` },
+      { label: 'Temperature', value: `${resident.vitals.temperature} C` }
+    ] : [];
+  const vitalsHtml = vitalsList.length ? `
     <div class="vitals-grid">
-      ${(resident.recentVitals || resident.vitals || []).map(v => `
-        <div class="vital-item"><strong>${v.label}</strong><div>${v.value}</div><small class="note">${v.time || ''}</small></div>
+      ${vitalsList.map(v => `
+        <div class="vital-item"><strong>${escapeHtml(v.label)}</strong><div>${escapeHtml(v.value)}</div><small class="note">${escapeHtml(v.time || '')}</small></div>
       `).join('')}
     </div>
   ` : '<div class="note">No recent vitals recorded.</div>';
 
   const modalHtml = `
   <div class="modal-bg" id="${modalId}" role="dialog" aria-modal="true">
-    <div class="modal-box" style="max-width:680px;">
-      <h2>${resident.name}</h2>
-      <div style="display:flex;gap:18px;align-items:flex-start;">
-        <div style="flex:1;min-width:220px;">
-          <p><strong>Room:</strong> ${resident.room}</p>
-          <p><strong>Status:</strong> <span class="status ${resident.status.toLowerCase()}">${resident.status}</span></p>
-          <p><strong>Medication:</strong> ${resident.medication}</p>
-          ${resident.note ? `<p class="note">${resident.note}</p>` : ''}
+    <div class="modal-box caregiver-resident-modal">
+      <h2>${escapeHtml(resident.name)}</h2>
+      <div class="caregiver-resident-detail-grid">
+        <div>
+          <p><strong>Room:</strong> ${escapeHtml(resident.room)}</p>
+          <p><strong>Status:</strong> <span class="status ${statusClass(resident.status)}">${escapeHtml(resident.status)}</span></p>
+          <p><strong>Medication:</strong> ${escapeHtml(resident.medication)}</p>
+          ${resident.note ? `<p class="note">${escapeHtml(resident.note)}</p>` : ''}
+          ${resident.carePlan ? `<h4 style="margin-top:12px;margin-bottom:6px;">Care Plan</h4><p class="note">${escapeHtml(resident.carePlan)}</p>` : ''}
           <h4 style="margin-top:12px;margin-bottom:6px;">Contacts</h4>
           ${contactsHtml}
         </div>
-        <div style="flex:1;min-width:220px;">
+        <div>
           <h4 style="margin-top:0;margin-bottom:6px;">Allergies</h4>
           ${allergiesHtml}
           <h4 style="margin-top:12px;margin-bottom:6px;">Recent Vitals</h4>
@@ -1494,27 +2941,13 @@ function showSection(section) {
   }
 
   if (section === "alerts") {
-    main.innerHTML = `
-      <div class="dashboard-top">
-        <h2>Alerts</h2>
-        <p>View and resolve emergency alerts.</p>
-      </div>
-
-      <div class="table-card">
-        <h3>Active Alerts</h3>
-        ${alerts.map((a, i) => `
-          <div class="alert-item">
-            <strong>${a.resident}</strong>
-            <p>${a.issue}</p>
-            <span class="badge ${a.level === "Critical" ? "critical" : "high"}">${a.level}</span>
-            <button class="review-btn" onclick="resolveAlert(${i})">Resolve</button>
-          </div>
-        `).join("")}
-      </div>
-    `;
+    renderAdminAlertsSection(adminDashboardData);
   }
 
   if (section === "schedules") {
+    renderAdminScheduleSection(adminDashboardData);
+    return;
+
     main.innerHTML = `
       <div class="dashboard-top">
         <h2>Schedules</h2>

@@ -1,0 +1,430 @@
+{
+  "USERS": [
+    {
+      "email": "admin@eldernest.com",
+      "role": "admin",
+      "name": "Admin User",
+      "dashboard": "admin-dashboard.html",
+      "passwordHash": "$2b$12$UIEIWN1IaEQ.XGR2qIkdM.u7cuBBKh5CxM.F/r206T66rHWmlz8eC"
+    },
+    {
+      "email": "caregiver@eldernest.com",
+      "role": "caregiver",
+      "name": "Caregiver User",
+      "dashboard": "caregiver.html",
+      "passwordHash": "$2b$12$6y25tXqTR3jloxrLCeAbYu5nRL/qPMDbIzLjcxCQkdq3nlDgdyvM."
+    },
+    {
+      "email": "resident@eldernest.com",
+      "role": "resident",
+      "name": "Resident User",
+      "dashboard": "resident.html",
+      "residentId": 1,
+      "passwordHash": "$2b$12$RgPwxm3pwSCqcxHl.83xruVcqNDY5WGNpi2XVD4SpyCn0FS5eO2Oe"
+    },
+    {
+      "email": "family@eldernest.com",
+      "role": "family",
+      "name": "Family User",
+      "dashboard": "family.html",
+      "residentId": 1,
+      "passwordHash": "$2b$12$27RMSTLtOIBHxNI/4hmgFOtraBKOgq1HgTyJmfo6t6XMizwfVw/8W"
+    }
+  ],
+  "ALERTS": [
+    {
+      "id": 1,
+      "resident": "Dorji Wangmo",
+      "issue": "Fall detected in Room A-12",
+      "level": "Critical"
+    },
+    {
+      "id": 2,
+      "resident": "Pema Choden",
+      "issue": "Medication missed",
+      "level": "High"
+    },
+    {
+      "id": 3,
+      "resident": "Sonam Tashi",
+      "issue": "Abnormal heart rate",
+      "level": "Critical"
+    }
+  ],
+  "ALERT_RESPONSES": {},
+  "STAFF": [
+    {
+      "id": "STF-1001",
+      "name": "Caregiver User",
+      "email": "caregiver@eldernest.com",
+      "role": "caregiver",
+      "assignedArea": "Wing A",
+      "plannedShift": "07:00 AM - 03:00 PM"
+    },
+    {
+      "id": "STF-1002",
+      "name": "Lhamo Deki",
+      "email": "lhamo.deki@eldernest.com",
+      "role": "caregiver",
+      "assignedArea": "Wing B",
+      "plannedShift": "03:00 PM - 11:00 PM"
+    },
+    {
+      "id": "STF-1003",
+      "name": "Tenzin Norbu",
+      "email": "tenzin.norbu@eldernest.com",
+      "role": "caregiver",
+      "assignedArea": "Medication Round",
+      "plannedShift": "11:00 PM - 07:00 AM"
+    }
+  ],
+  "FAMILY_MEMBERS": [
+    {
+      "id": "FAM-1001",
+      "name": "Family User",
+      "email": "family@eldernest.com",
+      "residentId": 1,
+      "relation": "Daughter"
+    }
+  ],
+  "CAREGIVER_SHIFTS": [
+    {
+      "id": 3,
+      "caregiverEmail": "caregiver@eldernest.com",
+      "caregiverName": "Caregiver User",
+      "role": "caregiver",
+      "assignedArea": "Wing A",
+      "startedAt": "2026-05-18T00:06:35.450Z",
+      "endedAt": null,
+      "status": "Working"
+    },
+    {
+      "id": 1,
+      "caregiverEmail": "lhamo.deki@eldernest.com",
+      "caregiverName": "Lhamo Deki",
+      "role": "caregiver",
+      "assignedArea": "Wing B",
+      "day": "Today",
+      "details": "Assigned care coverage for Wing B.",
+      "startedAt": "2026-05-17T22:20:49.710Z",
+      "endedAt": null,
+      "status": "Working"
+    },
+    {
+      "id": 2,
+      "caregiverEmail": "tenzin.norbu@eldernest.com",
+      "caregiverName": "Tenzin Norbu",
+      "role": "caregiver",
+      "assignedArea": "Medication Round",
+      "day": "Today",
+      "details": "Medication monitoring and night handover.",
+      "startedAt": "2026-05-17T18:35:49.712Z",
+      "endedAt": "2026-05-17T22:50:49.712Z",
+      "status": "Completed"
+    }
+  ],
+  "OPEN_SHIFTS": [
+    {
+      "id": "SH-201",
+      "title": "Morning Care Round",
+      "day": "Today",
+      "assignedArea": "Wing A",
+      "plannedShift": "07:00 AM - 03:00 PM",
+      "details": "Morning personal care, breakfast support, and wellness checks.",
+      "status": "Open",
+      "assignedStaffId": null,
+      "assignedResidentIds": []
+    },
+    {
+      "id": "SH-202",
+      "title": "Medication Support",
+      "day": "Today",
+      "assignedArea": "Medication Round",
+      "plannedShift": "03:00 PM - 11:00 PM",
+      "details": "Medication support and observation follow-up.",
+      "status": "Open",
+      "assignedStaffId": null,
+      "assignedResidentIds": []
+    },
+    {
+      "id": "SH-203",
+      "title": "Night Monitoring",
+      "day": "Tomorrow",
+      "assignedArea": "Wing C",
+      "plannedShift": "11:00 PM - 07:00 AM",
+      "details": "Overnight safety checks and sensor monitoring.",
+      "status": "Assigned",
+      "assignedStaffId": "STF-1003",
+      "assignedResidentIds": [
+        3
+      ]
+    }
+  ],
+  "CARE_NOTES": [],
+  "ADL_CHARTS": [],
+  "INCIDENT_REPORTS": [],
+  "CARE_SCHEDULE": [
+    {
+      "id": 1,
+      "time": "09:00 AM",
+      "label": "Morning health check",
+      "status": "Pending",
+      "completedBy": "",
+      "completedAt": null
+    },
+    {
+      "id": 2,
+      "time": "11:00 AM",
+      "label": "Medication round",
+      "status": "Pending",
+      "completedBy": "",
+      "completedAt": null
+    },
+    {
+      "id": 3,
+      "time": "02:00 PM",
+      "label": "Family visit",
+      "status": "Pending",
+      "completedBy": "",
+      "completedAt": null
+    },
+    {
+      "id": 4,
+      "time": "05:00 PM",
+      "label": "Evening wellness report",
+      "status": "Pending",
+      "completedBy": "",
+      "completedAt": null
+    }
+  ],
+  "FAMILY_MESSAGES": [
+    {
+      "id": 1,
+      "residentId": 1,
+      "familyEmail": "family@eldernest.com",
+      "senderRole": "family",
+      "senderName": "Family User",
+      "message": "Hi Dorji, thinking of you today. Hope you are feeling comfortable.",
+      "createdAt": "2026-05-17T23:10:49.712Z"
+    },
+    {
+      "id": 2,
+      "residentId": 1,
+      "familyEmail": "family@eldernest.com",
+      "senderRole": "resident",
+      "senderName": "Dorji Wangmo",
+      "message": "Thank you. I had my morning walk and feel good.",
+      "createdAt": "2026-05-17T23:25:49.712Z"
+    }
+  ],
+  "RESIDENTS": [
+    {
+      "id": 1,
+      "name": "Dorji Wangmo",
+      "age": 1,
+      "room": "A-12",
+      "status": "Stable",
+      "medication": "Vitamin D due in 15 mins",
+      "note": "Resident is stable and under regular monitoring.",
+      "carePlan": "Hydration reminder, light mobility support, and afternoon medication review.",
+      "allergies": "None recorded.",
+      "emergencyContact": "Tashi Wangmo, Daughter, +61 400 111 201",
+      "sensorAlerts": [
+        {
+          "type": "Sensor Mat",
+          "message": "Bed sensor mat active with normal movement pattern.",
+          "level": "Stable",
+          "time": "09:20 AM"
+        },
+        {
+          "type": "Door Sensor",
+          "message": "No unusual room exit activity detected.",
+          "level": "Stable",
+          "time": "10:05 AM"
+        }
+      ],
+      "medications": [
+        {
+          "name": "Vitamin D",
+          "dosage": "1000 IU",
+          "time": "1:00 PM",
+          "status": "Pending"
+        },
+        {
+          "name": "Calcium Tablet",
+          "dosage": "500 mg",
+          "time": "7:00 PM",
+          "status": "Scheduled"
+        }
+      ],
+      "vitals": {
+        "heartRate": 74,
+        "bloodPressure": "122/78",
+        "oxygen": 97,
+        "temperature": 36.7
+      },
+      "chartData": {
+        "wellness": 86,
+        "mobility": 72,
+        "medication": 91,
+        "sleep": 78
+      }
+    },
+    {
+      "id": 2,
+      "name": "Pema Choden",
+      "age": 82,
+      "room": "B-05",
+      "status": "Observation",
+      "medication": "Blood Pressure Tablet missed 8:00 AM",
+      "note": "Needs medication follow-up from caregiver.",
+      "carePlan": "Medication follow-up, blood pressure observation, and family update after review.",
+      "allergies": "Penicillin",
+      "emergencyContact": "Karma Choden, Son, +61 400 111 202",
+      "sensorAlerts": [
+        {
+          "type": "Sensor Mat",
+          "message": "Sensor mat detected reduced morning movement.",
+          "level": "Observation",
+          "time": "08:40 AM"
+        },
+        {
+          "type": "Medication Alert",
+          "message": "Blood pressure tablet was missed at 8:00 AM.",
+          "level": "High",
+          "time": "08:00 AM"
+        }
+      ],
+      "medications": [
+        {
+          "name": "Blood Pressure Tablet",
+          "dosage": "5 mg",
+          "time": "8:00 AM",
+          "status": "Missed"
+        },
+        {
+          "name": "Evening BP Tablet",
+          "dosage": "5 mg",
+          "time": "8:00 PM",
+          "status": "Scheduled"
+        }
+      ],
+      "vitals": {
+        "heartRate": 88,
+        "bloodPressure": "148/88",
+        "oxygen": 95,
+        "temperature": 36.9
+      },
+      "chartData": {
+        "wellness": 68,
+        "mobility": 61,
+        "medication": 54,
+        "sleep": 70
+      }
+    },
+    {
+      "id": 3,
+      "name": "Sonam Tashi",
+      "age": 75,
+      "room": "C-03",
+      "status": "Critical",
+      "medication": "Heart Medicine completed",
+      "note": "Requires close monitoring due to abnormal heart rate.",
+      "carePlan": "Close cardiac monitoring, hourly vitals, and immediate nurse review for abnormal readings.",
+      "allergies": "Sulfa medication",
+      "emergencyContact": "Lhamo Tashi, Sister, +61 400 111 203",
+      "sensorAlerts": [
+        {
+          "type": "Sensor Mat",
+          "message": "Sensor mat flagged prolonged rest period.",
+          "level": "Critical",
+          "time": "07:55 AM"
+        },
+        {
+          "type": "Heart Rate Sensor",
+          "message": "Abnormal heart rate detected by wearable sensor.",
+          "level": "Critical",
+          "time": "10:10 AM"
+        }
+      ],
+      "medications": [
+        {
+          "name": "Heart Medicine",
+          "dosage": "10 mg",
+          "time": "10:00 AM",
+          "status": "Completed"
+        },
+        {
+          "name": "Blood Thinner",
+          "dosage": "2 mg",
+          "time": "6:00 PM",
+          "status": "Scheduled"
+        }
+      ],
+      "vitals": {
+        "heartRate": 106,
+        "bloodPressure": "138/84",
+        "oxygen": 93,
+        "temperature": 37.4
+      },
+      "chartData": {
+        "wellness": 48,
+        "mobility": 52,
+        "medication": 88,
+        "sleep": 43
+      }
+    },
+    {
+      "id": 4,
+      "name": "Karma Dema",
+      "age": 80,
+      "room": "A-08",
+      "status": "Stable",
+      "medication": "Calcium Tablet due at 1:00 PM",
+      "note": "Resident condition is normal today.",
+      "carePlan": "Routine medication, daily walk support, and weekly family wellbeing report.",
+      "allergies": "Lactose intolerance",
+      "emergencyContact": "Dawa Dema, Nephew, +61 400 111 204",
+      "sensorAlerts": [
+        {
+          "type": "Sensor Mat",
+          "message": "Sensor mat active with normal transfer activity.",
+          "level": "Stable",
+          "time": "09:45 AM"
+        },
+        {
+          "type": "Motion Sensor",
+          "message": "Normal room movement recorded.",
+          "level": "Stable",
+          "time": "11:15 AM"
+        }
+      ],
+      "medications": [
+        {
+          "name": "Calcium Tablet",
+          "dosage": "500 mg",
+          "time": "1:00 PM",
+          "status": "Pending"
+        },
+        {
+          "name": "Sleep Support",
+          "dosage": "1 tablet",
+          "time": "9:00 PM",
+          "status": "Scheduled"
+        }
+      ],
+      "vitals": {
+        "heartRate": 71,
+        "bloodPressure": "118/76",
+        "oxygen": 98,
+        "temperature": 36.5
+      },
+      "chartData": {
+        "wellness": 89,
+        "mobility": 80,
+        "medication": 76,
+        "sleep": 84
+      }
+    }
+  ]
+}

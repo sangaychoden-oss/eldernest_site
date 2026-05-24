@@ -1,225 +1,238 @@
 const express = require('express');
 const session = require('express-session');
+const bcrypt = require('bcryptjs');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
+const MySQLSessionStore = require('express-mysql-session')(session);
 const path = require('path');
+const { loadSnapshot, saveSnapshot, checkConnection, closePool, DB_CONFIG } = require('./mysqlStore');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const isProduction = process.env.NODE_ENV === 'production';
+const sessionSecret = process.env.SESSION_SECRET || 'eldernest-demo-secret';
 
-const USERS = [
-  {
-    email: 'admin@eldernest.com',
-    password: 'password123',
-    role: 'admin',
-    name: 'Admin User',
-    dashboard: 'admin-dashboard.html'
-  },
-  {
-    email: 'caregiver@eldernest.com',
-    password: 'care123',
-    role: 'caregiver',
-    name: 'Caregiver User',
-    dashboard: 'caregiver.html'
-  },
-  {
-    email: 'resident@eldernest.com',
-    password: 'resident123',
-    role: 'resident',
-    name: 'Resident User',
-    dashboard: 'resident.html'
-  },
-  {
-    email: 'family@eldernest.com',
-    password: 'family123',
-    role: 'family',
-    name: 'Family User',
-    dashboard: 'family.html'
+let db;
+let
+  USERS,
+  ALERTS,
+  ALERT_RESPONSES,
+  STAFF,
+  FAMILY_MEMBERS,
+  CAREGIVER_SHIFTS,
+  OPEN_SHIFTS,
+  CARE_NOTES,
+  ADL_CHARTS,
+  INCIDENT_REPORTS,
+  CARE_SCHEDULE,
+  FAMILY_MESSAGES,
+  RESIDENTS;
+
+function assignCollections(snapshot) {
+  db = snapshot;
+  ({
+    USERS,
+    ALERTS,
+    ALERT_RESPONSES,
+    STAFF,
+    FAMILY_MEMBERS,
+    CAREGIVER_SHIFTS,
+    OPEN_SHIFTS,
+    CARE_NOTES,
+    ADL_CHARTS,
+    INCIDENT_REPORTS,
+    CARE_SCHEDULE,
+    FAMILY_MESSAGES,
+    RESIDENTS
+  } = db);
+}
+
+async function saveDatabase() {
+  await saveSnapshot(db);
+}
+
+const sessionStore = new MySQLSessionStore({
+  host: DB_CONFIG.host,
+  port: DB_CONFIG.port,
+  user: DB_CONFIG.user,
+  password: DB_CONFIG.password,
+  database: DB_CONFIG.database,
+  clearExpired: true,
+  checkExpirationInterval: 1000 * 60 * 15,
+  expiration: 1000 * 60 * 60 * 4
+});
+
+const loginLimiter = rateLimit({
+  windowMs: 1000 * 60 * 15,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many login attempts. Please wait and try again.' }
+});
+
+const apiLimiter = rateLimit({
+  windowMs: 1000 * 60 * 15,
+  max: 300,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Too many requests. Please wait and try again.' }
+});
+
+function validateProductionConfig() {
+  if (!isProduction) return;
+
+  const errors = [];
+
+  if (!process.env.SESSION_SECRET || sessionSecret.length < 32 || sessionSecret === 'eldernest-demo-secret') {
+    errors.push('SESSION_SECRET must be set to a unique value of at least 32 characters.');
   }
-];
 
-const ALERTS = [
-  { id: 1, resident: 'Dorji Wangmo', issue: 'Fall detected in Room A-12', level: 'Critical' },
-  { id: 2, resident: 'Pema Choden', issue: 'Medication missed', level: 'High' },
-  { id: 3, resident: 'Sonam Tashi', issue: 'Abnormal heart rate', level: 'Critical' }
-];
-
-const ALERT_RESPONSES = {};
-const STAFF = [
-  {
-    id: 'STF-1001',
-    name: 'Caregiver User',
-    email: 'caregiver@eldernest.com',
-    role: 'caregiver'
+  if (!process.env.DB_USER) {
+    errors.push('DB_USER must be set.');
   }
-];
-const CARE_NOTES = [];
-const ADL_CHARTS = [];
-const INCIDENT_REPORTS = [];
 
-const RESIDENTS = [
-  {
-    id: 1,
-    name: 'Dorji Wangmo',
-    age: 78,
-    room: 'A-12',
-    status: 'Stable',
-    medication: 'Vitamin D due in 15 mins',
-    note: 'Resident is stable and under regular monitoring.',
-    carePlan: 'Hydration reminder, light mobility support, and afternoon medication review.',
-    allergies: 'None recorded',
-    emergencyContact: 'Tashi Wangmo, Daughter, +61 400 111 201',
-    sensorAlerts: [
-      { type: 'Sensor Mat', message: 'Bed sensor mat active with normal movement pattern.', level: 'Stable', time: '09:20 AM' },
-      { type: 'Door Sensor', message: 'No unusual room exit activity detected.', level: 'Stable', time: '10:05 AM' }
-    ],
-    medications: [
-      { name: 'Vitamin D', dosage: '1000 IU', time: '1:00 PM', status: 'Pending' },
-      { name: 'Calcium Tablet', dosage: '500 mg', time: '7:00 PM', status: 'Scheduled' }
-    ],
-    vitals: {
-      heartRate: 74,
-      bloodPressure: '122/78',
-      oxygen: 97,
-      temperature: 36.7
-    },
-    chartData: {
-      wellness: 86,
-      mobility: 72,
-      medication: 91,
-      sleep: 78
-    }
-  },
-  {
-    id: 2,
-    name: 'Pema Choden',
-    age: 82,
-    room: 'B-05',
-    status: 'Observation',
-    medication: 'Blood Pressure Tablet missed 8:00 AM',
-    note: 'Needs medication follow-up from caregiver.',
-    carePlan: 'Medication follow-up, blood pressure observation, and family update after review.',
-    allergies: 'Penicillin',
-    emergencyContact: 'Karma Choden, Son, +61 400 111 202',
-    sensorAlerts: [
-      { type: 'Sensor Mat', message: 'Sensor mat detected reduced morning movement.', level: 'Observation', time: '08:40 AM' },
-      { type: 'Medication Alert', message: 'Blood pressure tablet was missed at 8:00 AM.', level: 'High', time: '08:00 AM' }
-    ],
-    medications: [
-      { name: 'Blood Pressure Tablet', dosage: '5 mg', time: '8:00 AM', status: 'Missed' },
-      { name: 'Evening BP Tablet', dosage: '5 mg', time: '8:00 PM', status: 'Scheduled' }
-    ],
-    vitals: {
-      heartRate: 88,
-      bloodPressure: '148/88',
-      oxygen: 95,
-      temperature: 36.9
-    },
-    chartData: {
-      wellness: 68,
-      mobility: 61,
-      medication: 54,
-      sleep: 70
-    }
-  },
-  {
-    id: 3,
-    name: 'Sonam Tashi',
-    age: 75,
-    room: 'C-03',
-    status: 'Critical',
-    medication: 'Heart Medicine completed',
-    note: 'Requires close monitoring due to abnormal heart rate.',
-    carePlan: 'Close cardiac monitoring, hourly vitals, and immediate nurse review for abnormal readings.',
-    allergies: 'Sulfa medication',
-    emergencyContact: 'Lhamo Tashi, Sister, +61 400 111 203',
-    sensorAlerts: [
-      { type: 'Sensor Mat', message: 'Sensor mat flagged prolonged rest period.', level: 'Critical', time: '07:55 AM' },
-      { type: 'Heart Rate Sensor', message: 'Abnormal heart rate detected by wearable sensor.', level: 'Critical', time: '10:10 AM' }
-    ],
-    medications: [
-      { name: 'Heart Medicine', dosage: '10 mg', time: '10:00 AM', status: 'Completed' },
-      { name: 'Blood Thinner', dosage: '2 mg', time: '6:00 PM', status: 'Scheduled' }
-    ],
-    vitals: {
-      heartRate: 106,
-      bloodPressure: '138/84',
-      oxygen: 93,
-      temperature: 37.4
-    },
-    chartData: {
-      wellness: 48,
-      mobility: 52,
-      medication: 88,
-      sleep: 43
-    }
-  },
-  {
-    id: 4,
-    name: 'Karma Dema',
-    age: 80,
-    room: 'A-08',
-    status: 'Stable',
-    medication: 'Calcium Tablet due at 1:00 PM',
-    note: 'Resident condition is normal today.',
-    carePlan: 'Routine medication, daily walk support, and weekly family wellbeing report.',
-    allergies: 'Lactose intolerance',
-    emergencyContact: 'Dawa Dema, Nephew, +61 400 111 204',
-    sensorAlerts: [
-      { type: 'Sensor Mat', message: 'Sensor mat active with normal transfer activity.', level: 'Stable', time: '09:45 AM' },
-      { type: 'Motion Sensor', message: 'Normal room movement recorded.', level: 'Stable', time: '11:15 AM' }
-    ],
-    medications: [
-      { name: 'Calcium Tablet', dosage: '500 mg', time: '1:00 PM', status: 'Pending' },
-      { name: 'Sleep Support', dosage: '1 tablet', time: '9:00 PM', status: 'Scheduled' }
-    ],
-    vitals: {
-      heartRate: 71,
-      bloodPressure: '118/76',
-      oxygen: 98,
-      temperature: 36.5
-    },
-    chartData: {
-      wellness: 89,
-      mobility: 80,
-      medication: 76,
-      sleep: 84
-    }
+  if (!process.env.DB_NAME) {
+    errors.push('DB_NAME must be set.');
   }
-];
 
-app.use(express.json());
+  if (!process.env.DB_PASSWORD || process.env.DB_PASSWORD.includes('replace-with')) {
+    errors.push('DB_PASSWORD must be set to the production database password.');
+  }
+
+  if (errors.length) {
+    throw new Error(`Production configuration is incomplete: ${errors.join(' ')}`);
+  }
+}
+
+validateProductionConfig();
+
+app.disable('x-powered-by');
+app.set('trust proxy', 1);
+app.use(helmet({
+  contentSecurityPolicy: false
+}));
+app.use(express.json({ limit: '200kb' }));
+app.use('/api', apiLimiter);
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || 'eldernest-demo-secret',
+    secret: sessionSecret,
+    store: sessionStore,
+    name: 'eldernest.sid',
     resave: false,
     saveUninitialized: false,
     cookie: {
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: isProduction,
       maxAge: 1000 * 60 * 60 * 4
     }
   })
 );
 
-app.post('/api/login', (req, res) => {
-  const { email, password } = req.body;
+app.use((req, res, next) => {
+  const originalJson = res.json.bind(res);
+  res.json = body => {
+    if (req.method !== 'GET' && res.statusCode < 400) {
+      return saveDatabase()
+        .then(() => originalJson(body))
+        .catch(error => {
+          console.error('Database save failed:', error);
+          return res.status(500).send('Database save failed');
+        });
+    }
+    return originalJson(body);
+  };
+  next();
+});
+
+app.get('/api/health', async (req, res) => {
+  try {
+    await checkConnection();
+    res.json({
+      status: 'ok',
+      database: 'ok',
+      uptime: Math.round(process.uptime()),
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      database: 'unavailable',
+      message: 'Database health check failed.'
+    });
+  }
+});
+
+function normalizeEmail(email) {
+  return (email || '').toString().trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+}
+
+function isStrongEnoughPassword(password) {
+  return typeof password === 'string' && password.length >= 8;
+}
+
+async function hashPassword(password) {
+  return bcrypt.hash(password, 12);
+}
+
+async function verifyPassword(user, password) {
+  if (user.passwordHash) {
+    return bcrypt.compare(password, user.passwordHash);
+  }
+
+  return user.password === password;
+}
+
+async function migrateUserPasswords() {
+  let changed = false;
+
+  for (const user of USERS) {
+    if (user.password && !user.passwordHash) {
+      user.passwordHash = await hashPassword(user.password.toString());
+      delete user.password;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    await saveDatabase();
+  }
+}
+
+app.post('/api/login', loginLimiter, async (req, res) => {
+  const email = normalizeEmail(req.body.email);
+  const { password } = req.body;
 
   if (!email || !password) {
     return res.status(400).json({ success: false, message: 'Email and password are required.' });
   }
 
-  const user = USERS.find(u => u.email === email && u.password === password);
+  const user = USERS.find(u => u.email.toLowerCase() === email);
 
-  if (!user) {
+  if (!user || !(await verifyPassword(user, password))) {
     return res.status(401).json({ success: false, message: 'Invalid email or password.' });
   }
 
-  req.session.user = {
-    email: user.email,
-    name: user.name,
-    role: user.role,
-    dashboard: user.dashboard
-  };
-  req.session.loggedIn = true;
+  req.session.regenerate(error => {
+    if (error) {
+      return res.status(500).json({ success: false, message: 'Login session could not be created.' });
+    }
 
-  res.json({ success: true, user: req.session.user });
+    req.session.user = {
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      dashboard: user.dashboard,
+      residentId: user.residentId || null
+    };
+    req.session.loggedIn = true;
+
+    res.json({ success: true, user: req.session.user });
+  });
 });
 
 app.post('/api/logout', (req, res) => {
@@ -228,7 +241,7 @@ app.post('/api/logout', (req, res) => {
       return res.status(500).json({ success: false, message: 'Logout failed.' });
     }
 
-    res.clearCookie('connect.sid');
+    res.clearCookie('eldernest.sid');
     res.json({ success: true });
   });
 });
@@ -249,6 +262,29 @@ function requireAdmin(req, res, next) {
   res.status(403).json({ success: false, message: 'Admin access required' });
 }
 
+function formatShiftTime(value) {
+  if (!value) return 'Not recorded';
+  return new Date(value).toLocaleTimeString('en-AU', { hour: '2-digit', minute: '2-digit' });
+}
+
+function getCaregiverShiftStatus(staff) {
+  const latestShift = CAREGIVER_SHIFTS
+    .filter(shift => shift.caregiverEmail === staff.email)
+    .sort((a, b) => new Date(b.startedAt) - new Date(a.startedAt))[0];
+
+  return {
+    ...staff,
+    assignedResidentIds: staff.assignedResidentIds || [],
+    status: latestShift && !latestShift.endedAt ? 'Working' : 'Off Duty',
+    startedAt: latestShift ? latestShift.startedAt : null,
+    endedAt: latestShift ? latestShift.endedAt : null,
+    shiftLabel: latestShift && !latestShift.endedAt
+      ? `${formatShiftTime(latestShift.startedAt)} - Now`
+      : staff.plannedShift || 'Not scheduled',
+    activeShiftId: latestShift && !latestShift.endedAt ? latestShift.id : null
+  };
+}
+
 app.get('/api/session', (req, res) => {
   if (req.session && req.session.loggedIn && req.session.user) {
     return res.json({
@@ -266,6 +302,10 @@ app.get('/api/dashboard-data', requireAuth, (req, res) => {
   const user = req.session.user;
 
   const residents = RESIDENTS;
+  const caregiverStatus = STAFF
+    .filter(staff => staff.role === 'caregiver')
+    .map(getCaregiverShiftStatus);
+  const currentCaregiverShift = caregiverStatus.find(staff => staff.email === user.email) || null;
 
   const medications = RESIDENTS.flatMap(resident =>
     resident.medications.map(medication => ({
@@ -283,36 +323,61 @@ app.get('/api/dashboard-data', requireAuth, (req, res) => {
     response: ALERT_RESPONSES[alert.id] || ''
   }));
 
-  const schedule = [
-    { time: '09:00 AM', label: 'Morning health check' },
-    { time: '11:00 AM', label: 'Medication round' },
-    { time: '02:00 PM', label: 'Family visit' },
-    { time: '05:00 PM', label: 'Evening wellness report' }
-  ];
+  const schedule = CARE_SCHEDULE;
 
-  const familyUpdates = [
-    { resident: 'Dorji Wangmo', note: 'Stable and under regular observation.', status: 'Important' },
-    { resident: 'Pema Choden', note: 'Medication missed this morning.', status: 'Attention' }
-  ];
+  const allFamilyUpdates = RESIDENTS.map(resident => ({
+    resident: resident.name,
+    note: `${resident.status}: ${resident.note}`,
+    status: resident.status === 'Critical' || resident.status === 'Observation' ? 'Attention' : 'Important'
+  }));
+  const familyMember = FAMILY_MEMBERS.find(member => member.email === user.email);
+  const linkedFamilyResident = familyMember
+    ? RESIDENTS.find(resident => resident.id === familyMember.residentId)
+    : null;
+  const linkedResident = user.role === 'resident'
+    ? RESIDENTS.find(resident => resident.id === user.residentId)
+    : linkedFamilyResident;
+  const linkedResidents = linkedResident ? [linkedResident] : RESIDENTS;
+  const familyUpdates = (user.role === 'family' || user.role === 'resident') && linkedResident
+    ? allFamilyUpdates.filter(update => update.resident === linkedResident.name)
+    : allFamilyUpdates;
+  const familyMessages = user.role === 'family' && linkedResident
+    ? FAMILY_MESSAGES.filter(message => message.residentId === linkedResident.id && message.familyEmail === user.email)
+    : user.role === 'resident' && linkedResident
+      ? FAMILY_MESSAGES.filter(message => message.residentId === linkedResident.id)
+      : [];
 
-  const caregiverAssignments = RESIDENTS.map(resident => ({
+  const currentStaff = STAFF.find(staff => staff.email === user.email);
+  const assignedResidentIds = currentStaff && currentStaff.assignedResidentIds && currentStaff.assignedResidentIds.length
+    ? currentStaff.assignedResidentIds
+    : null;
+  const caregiverResidentSource = user.role === 'caregiver' && assignedResidentIds
+    ? RESIDENTS.filter(resident => assignedResidentIds.includes(resident.id))
+    : RESIDENTS;
+
+  const caregiverAssignments = caregiverResidentSource.map(resident => ({
     id: resident.id,
     name: resident.name,
+    age: resident.age,
     room: resident.room,
     medication: resident.medication,
     status: resident.status === 'Critical' ? 'Priority' : resident.status === 'Observation' ? 'Monitoring' : 'Care Active',
     note: resident.note,
+    allergies: resident.allergies,
+    emergencyContact: resident.emergencyContact,
+    carePlan: resident.carePlan,
     medications: resident.medications,
     sensorAlerts: resident.sensorAlerts,
     vitals: resident.vitals,
     chartData: resident.chartData
   }));
 
+  const residentPortalResident = linkedResident || RESIDENTS[0];
   const residentInfo = {
-    healthStatus: 'Stable',
-    nextMedication: 'Vitamin D tablet due at 1:00 PM with meal.',
-    reminders: 'Hydration reminder and light exercise session scheduled.',
-    familyContact: 'Family members can be reached directly through the portal.',
+    healthStatus: residentPortalResident.status,
+    nextMedication: residentPortalResident.medication,
+    reminders: residentPortalResident.carePlan,
+    familyContact: residentPortalResident.emergencyContact,
     schedule,
     quickActions: [
       { label: 'Call Caregiver', type: 'primary' },
@@ -327,7 +392,7 @@ app.get('/api/dashboard-data', requireAuth, (req, res) => {
     user,
     stats: {
       totalResidents: residents.length,
-      activeCaregivers: 24,
+      activeCaregivers: caregiverStatus.filter(staff => staff.status === 'Working').length,
       medicationDue: 19,
       criticalAlerts: alerts.filter(a => a.level === 'Critical').length
     },
@@ -336,15 +401,166 @@ app.get('/api/dashboard-data', requireAuth, (req, res) => {
     alerts,
     schedule,
     familyUpdates,
+    linkedResidents,
+    familyMessages,
     caregiverAssignments,
     residentInfo,
     staff: STAFF,
+    families: FAMILY_MEMBERS.map(member => ({
+      ...member,
+      resident: (RESIDENTS.find(resident => resident.id === member.residentId) || {}).name || 'Unassigned'
+    })),
+    users: USERS.map(({ password, passwordHash, ...safeUser }) => ({
+      ...safeUser,
+      resident: safeUser.residentId ? (RESIDENTS.find(resident => resident.id === safeUser.residentId) || {}).name || 'Unassigned' : ''
+    })),
     careNotes: CARE_NOTES,
     adlCharts: ADL_CHARTS,
-    incidentReports: INCIDENT_REPORTS
+    incidentReports: INCIDENT_REPORTS,
+    caregiverStatus,
+    currentCaregiverShift,
+    shiftHistory: CAREGIVER_SHIFTS,
+    openShifts: OPEN_SHIFTS
   };
 
   res.json(baseResponse);
+});
+
+app.post('/api/shifts/start', requireAuth, (req, res) => {
+  const user = req.session.user;
+  if (user.role !== 'caregiver') {
+    return res.status(403).json({ success: false, message: 'Only caregivers can start a shift.' });
+  }
+
+  const staff = STAFF.find(item => item.email === user.email);
+  if (!staff) {
+    return res.status(404).json({ success: false, message: 'Caregiver staff record not found.' });
+  }
+
+  const activeShift = CAREGIVER_SHIFTS.find(shift => shift.caregiverEmail === user.email && !shift.endedAt);
+  if (activeShift) {
+    return res.json({ success: true, shift: activeShift, caregiver: getCaregiverShiftStatus(staff) });
+  }
+
+  const shift = {
+    id: CAREGIVER_SHIFTS.length + 1,
+    caregiverEmail: user.email,
+    caregiverName: user.name,
+    role: 'caregiver',
+    assignedArea: staff.assignedArea || 'General Care',
+    startedAt: new Date().toISOString(),
+    endedAt: null,
+    status: 'Working'
+  };
+
+  CAREGIVER_SHIFTS.unshift(shift);
+  res.status(201).json({ success: true, shift, caregiver: getCaregiverShiftStatus(staff) });
+});
+
+app.post('/api/shifts/end', requireAuth, (req, res) => {
+  const user = req.session.user;
+  if (user.role !== 'caregiver') {
+    return res.status(403).json({ success: false, message: 'Only caregivers can end a shift.' });
+  }
+
+  const staff = STAFF.find(item => item.email === user.email);
+  const activeShift = CAREGIVER_SHIFTS.find(shift => shift.caregiverEmail === user.email && !shift.endedAt);
+  if (!activeShift) {
+    return res.status(404).json({ success: false, message: 'No active shift found.' });
+  }
+
+  activeShift.endedAt = new Date().toISOString();
+  activeShift.status = 'Completed';
+  res.json({ success: true, shift: activeShift, caregiver: staff ? getCaregiverShiftStatus(staff) : null });
+});
+
+app.post('/api/shifts/assign', requireAuth, requireAdmin, (req, res) => {
+  const { staffId, shiftId, title, day, assignedArea, plannedShift, details, residentIds } = req.body;
+  const staff = STAFF.find(item => item.id === staffId && item.role === 'caregiver');
+
+  if (!staff) {
+    return res.status(400).json({ success: false, message: 'Choose a caregiver to assign.' });
+  }
+
+  const shift = OPEN_SHIFTS.find(item => item.id === shiftId);
+  if (!shift) {
+    return res.status(400).json({ success: false, message: 'Choose an open shift.' });
+  }
+
+  const previousShift = OPEN_SHIFTS.find(item => item.assignedStaffId === staff.id);
+  if (previousShift && previousShift.id !== shift.id) {
+    previousShift.assignedStaffId = null;
+  }
+
+  shift.assignedStaffId = staff.id;
+  shift.title = (title || shift.title).toString().trim();
+  shift.day = (day || shift.day || 'Today').toString().trim();
+  staff.assignedArea = (assignedArea || shift.assignedArea || staff.assignedArea || 'General Care').toString().trim();
+  staff.plannedShift = (plannedShift || shift.plannedShift || staff.plannedShift || 'To be scheduled').toString().trim();
+  const selectedResidentIds = Array.isArray(residentIds)
+    ? residentIds.map(Number).filter(id => RESIDENTS.some(resident => resident.id === id))
+    : [];
+  staff.assignedResidentIds = selectedResidentIds;
+  shift.assignedArea = staff.assignedArea;
+  shift.plannedShift = staff.plannedShift;
+  shift.details = (details || shift.details || '').toString().trim();
+  shift.assignedResidentIds = selectedResidentIds;
+  shift.status = 'Assigned';
+
+  res.json({
+    success: true,
+    staff: getCaregiverShiftStatus(staff),
+    openShifts: OPEN_SHIFTS,
+    staffList: STAFF
+  });
+});
+
+app.delete('/api/open-shifts/:id', requireAuth, requireAdmin, (req, res) => {
+  const shift = OPEN_SHIFTS.find(item => item.id === req.params.id);
+  if (!shift) {
+    return res.status(404).json({ success: false, message: 'Shift not found.' });
+  }
+
+  if (shift.assignedStaffId) {
+    const staff = STAFF.find(item => item.id === shift.assignedStaffId);
+    if (staff) {
+      staff.assignedResidentIds = [];
+    }
+  }
+
+  shift.status = 'Cancelled';
+  shift.assignedStaffId = null;
+  shift.assignedResidentIds = [];
+  res.json({ success: true, shift, openShifts: OPEN_SHIFTS, staffList: STAFF });
+});
+
+app.put('/api/shift-history/:id', requireAuth, requireAdmin, (req, res) => {
+  const shift = CAREGIVER_SHIFTS.find(item => item.id === Number(req.params.id));
+  const { day, assignedArea, details, startedAt, endedAt, status } = req.body;
+
+  if (!shift) {
+    return res.status(404).json({ success: false, message: 'Shift history item not found.' });
+  }
+
+  shift.day = (day || shift.day || 'Today').toString().trim();
+  shift.assignedArea = (assignedArea || shift.assignedArea).toString().trim();
+  shift.details = (details || shift.details || '').toString().trim();
+  shift.startedAt = startedAt || shift.startedAt;
+  shift.endedAt = endedAt || null;
+  shift.status = status || (shift.endedAt ? 'Completed' : 'Working');
+
+  res.json({ success: true, shift, shiftHistory: CAREGIVER_SHIFTS });
+});
+
+app.delete('/api/shift-history/:id', requireAuth, requireAdmin, (req, res) => {
+  const shift = CAREGIVER_SHIFTS.find(item => item.id === Number(req.params.id));
+  if (!shift) {
+    return res.status(404).json({ success: false, message: 'Shift history item not found.' });
+  }
+
+  shift.status = 'Cancelled';
+  shift.endedAt = shift.endedAt || new Date().toISOString();
+  res.json({ success: true, shift, shiftHistory: CAREGIVER_SHIFTS });
 });
 
 app.post('/api/alerts/:id/respond', requireAuth, (req, res) => {
@@ -376,8 +592,31 @@ app.get('/api/residents', requireAuth, (req, res) => {
   res.json({ success: true, residents: RESIDENTS });
 });
 
+app.delete('/api/residents/:id', requireAuth, requireAdmin, (req, res) => {
+  const residentId = Number(req.params.id);
+  const residentIndex = RESIDENTS.findIndex(item => item.id === residentId);
+
+  if (residentIndex === -1) {
+    return res.status(404).json({ success: false, message: 'Resident not found.' });
+  }
+
+  const [removedResident] = RESIDENTS.splice(residentIndex, 1);
+  FAMILY_MEMBERS.forEach(member => {
+    if (member.residentId === residentId) {
+      member.residentId = null;
+    }
+  });
+  USERS.forEach(user => {
+    if (user.residentId === residentId) {
+      user.residentId = null;
+    }
+  });
+
+  res.json({ success: true, removedResident });
+});
+
 app.post('/api/onboard/resident', requireAuth, requireAdmin, (req, res) => {
-  const { name, age, room, status, medication, carePlan, emergencyContact } = req.body;
+  const { name, age, room, status, medication, carePlan, emergencyContact, familyEmail } = req.body;
 
   if (!name || !room) {
     return res.status(400).json({ success: false, message: 'Resident name and room number are required.' });
@@ -415,10 +654,27 @@ app.post('/api/onboard/resident', requireAuth, requireAdmin, (req, res) => {
   };
 
   RESIDENTS.push(resident);
-  res.status(201).json({ success: true, resident });
+
+  let linkedFamily = null;
+  if (familyEmail) {
+    const normalizedEmail = familyEmail.toString().trim().toLowerCase();
+    const family = FAMILY_MEMBERS.find(member => member.email.toLowerCase() === normalizedEmail);
+    const user = USERS.find(item => item.email.toLowerCase() === normalizedEmail && item.role === 'family');
+
+    if (family && user) {
+      family.residentId = resident.id;
+      user.residentId = resident.id;
+      linkedFamily = {
+        ...family,
+        resident: resident.name
+      };
+    }
+  }
+
+  res.status(201).json({ success: true, resident, linkedFamily });
 });
 
-app.post('/api/onboard/staff', requireAuth, requireAdmin, (req, res) => {
+app.post('/api/onboard/staff', requireAuth, requireAdmin, async (req, res) => {
   const { name, email, password, role } = req.body;
   const staffRole = role || 'caregiver';
 
@@ -426,11 +682,19 @@ app.post('/api/onboard/staff', requireAuth, requireAdmin, (req, res) => {
     return res.status(400).json({ success: false, message: 'Staff name, email, and password are required.' });
   }
 
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid login email.' });
+  }
+
+  if (!isStrongEnoughPassword(password.toString())) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
+  }
+
   if (!['caregiver', 'admin'].includes(staffRole)) {
     return res.status(400).json({ success: false, message: 'Staff role must be caregiver or admin.' });
   }
 
-  const normalizedEmail = email.toString().trim().toLowerCase();
   if (USERS.some(user => user.email.toLowerCase() === normalizedEmail)) {
     return res.status(409).json({ success: false, message: 'A user with this email already exists.' });
   }
@@ -439,7 +703,7 @@ app.post('/api/onboard/staff', requireAuth, requireAdmin, (req, res) => {
   const dashboard = staffRole === 'admin' ? 'admin-dashboard.html' : 'caregiver.html';
   const user = {
     email: normalizedEmail,
-    password: password.toString(),
+    passwordHash: await hashPassword(password.toString()),
     role: staffRole,
     name: name.toString().trim(),
     dashboard
@@ -448,13 +712,200 @@ app.post('/api/onboard/staff', requireAuth, requireAdmin, (req, res) => {
     id: staffId,
     name: user.name,
     email: user.email,
-    role: staffRole
+    role: staffRole,
+    assignedArea: staffRole === 'caregiver' ? 'General Care' : 'Administration',
+    plannedShift: staffRole === 'caregiver' ? 'To be scheduled' : 'Office Hours'
   };
 
   USERS.push(user);
   STAFF.push(staff);
 
   res.status(201).json({ success: true, staff });
+});
+
+app.post('/api/onboard/family', requireAuth, requireAdmin, async (req, res) => {
+  const { name, email, password, residentId, relation } = req.body;
+  const resident = RESIDENTS.find(item => item.id === Number(residentId));
+
+  if (!name || !email || !password || !resident) {
+    return res.status(400).json({ success: false, message: 'Family name, email, password, and linked resident are required.' });
+  }
+
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ success: false, message: 'Enter a valid login email.' });
+  }
+
+  if (!isStrongEnoughPassword(password.toString())) {
+    return res.status(400).json({ success: false, message: 'Password must be at least 8 characters.' });
+  }
+
+  if (USERS.some(user => user.email.toLowerCase() === normalizedEmail)) {
+    return res.status(409).json({ success: false, message: 'A user with this email already exists.' });
+  }
+
+  const familyId = `FAM-${1001 + FAMILY_MEMBERS.length}`;
+  const user = {
+    email: normalizedEmail,
+    passwordHash: await hashPassword(password.toString()),
+    role: 'family',
+    name: name.toString().trim(),
+    dashboard: 'family.html',
+    residentId: resident.id
+  };
+  const family = {
+    id: familyId,
+    name: user.name,
+    email: user.email,
+    residentId: resident.id,
+    relation: (relation || 'Family').toString().trim()
+  };
+
+  USERS.push(user);
+  FAMILY_MEMBERS.push(family);
+
+  res.status(201).json({
+    success: true,
+    family: {
+      ...family,
+      resident: resident.name
+    },
+    user: {
+      email: user.email,
+      role: user.role,
+      name: user.name,
+      dashboard: user.dashboard,
+      residentId: user.residentId,
+      resident: resident.name
+    }
+  });
+});
+
+app.delete('/api/users/:email', requireAuth, requireAdmin, (req, res) => {
+  const email = decodeURIComponent(req.params.email).toLowerCase();
+
+  if (email === req.session.user.email.toLowerCase()) {
+    return res.status(400).json({ success: false, message: 'You cannot remove your own active admin account.' });
+  }
+
+  const userIndex = USERS.findIndex(user => user.email.toLowerCase() === email);
+  if (userIndex === -1) {
+    return res.status(404).json({ success: false, message: 'User not found.' });
+  }
+
+  const [removedUser] = USERS.splice(userIndex, 1);
+
+  if (removedUser.role === 'caregiver' || removedUser.role === 'admin') {
+    const staffIndex = STAFF.findIndex(staff => staff.email.toLowerCase() === email);
+    const removedStaff = staffIndex >= 0 ? STAFF.splice(staffIndex, 1)[0] : null;
+    if (removedStaff) {
+      OPEN_SHIFTS.forEach(shift => {
+        if (shift.assignedStaffId === removedStaff.id) {
+          shift.assignedStaffId = null;
+        }
+      });
+    }
+    CAREGIVER_SHIFTS.forEach(shift => {
+      if (shift.caregiverEmail.toLowerCase() === email && !shift.endedAt) {
+        shift.endedAt = new Date().toISOString();
+        shift.status = 'Completed';
+      }
+    });
+  }
+
+  if (removedUser.role === 'family') {
+    const familyIndex = FAMILY_MEMBERS.findIndex(member => member.email.toLowerCase() === email);
+    if (familyIndex >= 0) {
+      FAMILY_MEMBERS.splice(familyIndex, 1);
+    }
+  }
+
+  res.json({
+    success: true,
+    removed: {
+      email: removedUser.email,
+      name: removedUser.name,
+      role: removedUser.role
+    }
+  });
+});
+
+app.post('/api/messages', requireAuth, (req, res) => {
+  const user = req.session.user;
+  const { residentId, familyEmail, message } = req.body;
+  const resident = RESIDENTS.find(item => item.id === Number(residentId || user.residentId));
+
+  if (!resident || !message || !message.toString().trim()) {
+    return res.status(400).json({ success: false, message: 'Resident and message text are required.' });
+  }
+
+  let conversationFamilyEmail = familyEmail;
+  if (user.role === 'family') {
+    const familyMember = FAMILY_MEMBERS.find(member => member.email === user.email && member.residentId === resident.id);
+    if (!familyMember) {
+      return res.status(403).json({ success: false, message: 'You can only message your linked resident.' });
+    }
+    conversationFamilyEmail = user.email;
+  } else if (user.role === 'resident') {
+    const linkedFamily = FAMILY_MEMBERS.find(member => member.email === familyEmail && member.residentId === resident.id);
+    if (!linkedFamily) {
+      return res.status(403).json({ success: false, message: 'Choose a linked family member.' });
+    }
+  } else {
+    return res.status(403).json({ success: false, message: 'Only families and residents can send portal messages.' });
+  }
+
+  const portalMessage = {
+    id: FAMILY_MESSAGES.length + 1,
+    residentId: resident.id,
+    familyEmail: conversationFamilyEmail,
+    senderRole: user.role,
+    senderName: user.role === 'resident' ? resident.name : user.name,
+    message: message.toString().trim(),
+    createdAt: new Date().toISOString()
+  };
+
+  FAMILY_MESSAGES.push(portalMessage);
+  res.status(201).json({ success: true, message: portalMessage });
+});
+
+app.post('/api/care-requests', requireAuth, (req, res) => {
+  const user = req.session.user;
+  if (user.role !== 'resident') {
+    return res.status(403).json({ success: false, message: 'Only residents can request caregiver help.' });
+  }
+
+  const resident = RESIDENTS.find(item => item.id === Number(user.residentId)) || RESIDENTS[0];
+  const alert = {
+    id: ALERTS.reduce((max, item) => Math.max(max, item.id), 0) + 1,
+    resident: resident.name,
+    issue: `Care desk request from Room ${resident.room}`,
+    level: 'High',
+    createdAt: new Date().toISOString()
+  };
+
+  ALERTS.unshift(alert);
+  res.status(201).json({ success: true, alert });
+});
+
+app.post('/api/emergency-requests', requireAuth, (req, res) => {
+  const user = req.session.user;
+  if (user.role !== 'resident') {
+    return res.status(403).json({ success: false, message: 'Only residents can send an emergency request.' });
+  }
+
+  const resident = RESIDENTS.find(item => item.id === Number(user.residentId)) || RESIDENTS[0];
+  const alert = {
+    id: ALERTS.reduce((max, item) => Math.max(max, item.id), 0) + 1,
+    resident: resident.name,
+    issue: `Emergency desk request from Room ${resident.room}`,
+    level: 'Critical',
+    createdAt: new Date().toISOString(),
+    audience: 'caregiver-admin'
+  };
+
+  ALERTS.unshift(alert);
+  res.status(201).json({ success: true, alert });
 });
 
 app.post('/api/care-notes', requireAuth, (req, res) => {
@@ -548,6 +999,49 @@ app.put('/api/residents/:id/medications/:medicationIndex', requireAuth, (req, re
   res.json({ success: true, resident, medication });
 });
 
+app.put('/api/schedule/:id/done', requireAuth, (req, res) => {
+  if (req.session.user.role !== 'caregiver') {
+    return res.status(403).json({ success: false, message: 'Only caregivers can complete schedule items.' });
+  }
+
+  const scheduleItem = CARE_SCHEDULE.find(item => item.id === Number(req.params.id));
+  if (!scheduleItem) {
+    return res.status(404).json({ success: false, message: 'Schedule item not found.' });
+  }
+
+  scheduleItem.status = 'Completed';
+  scheduleItem.completedBy = req.session.user.name;
+  scheduleItem.completedAt = new Date().toISOString();
+
+  res.json({ success: true, scheduleItem, schedule: CARE_SCHEDULE });
+});
+
+app.post('/api/schedule', requireAuth, requireAdmin, (req, res) => {
+  const { time, label, details, residentId } = req.body;
+  const resident = residentId ? RESIDENTS.find(item => item.id === Number(residentId)) : null;
+
+  if (!time || !label) {
+    return res.status(400).json({ success: false, message: 'Schedule time and title are required.' });
+  }
+
+  const scheduleItem = {
+    id: CARE_SCHEDULE.reduce((max, item) => Math.max(max, item.id), 0) + 1,
+    time: time.toString().trim(),
+    label: label.toString().trim(),
+    details: (details || '').toString().trim(),
+    residentId: resident ? resident.id : null,
+    resident: resident ? resident.name : 'All residents',
+    status: 'Pending',
+    completedBy: '',
+    completedAt: null,
+    createdBy: req.session.user.name,
+    createdAt: new Date().toISOString()
+  };
+
+  CARE_SCHEDULE.push(scheduleItem);
+  res.status(201).json({ success: true, scheduleItem, schedule: CARE_SCHEDULE });
+});
+
 app.put('/api/residents/:id', requireAuth, (req, res) => {
   const residentId = Number(req.params.id);
   const resident = RESIDENTS.find(item => item.id === residentId);
@@ -600,8 +1094,54 @@ app.put('/api/residents/:id', requireAuth, (req, res) => {
   res.json({ success: true, resident });
 });
 
-app.use(express.static(path.join(__dirname)));
+app.use(express.static(path.join(__dirname), {
+  dotfiles: 'deny',
+  etag: true,
+  maxAge: isProduction ? '1h' : 0,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    }
+  }
+}));
 
-app.listen(PORT, () => {
-  console.log(`ElderNest backend running at http://localhost:${PORT}`);
+app.use('/api', (req, res) => {
+  res.status(404).json({ success: false, message: 'API endpoint not found.' });
 });
+
+app.use((error, req, res, next) => {
+  console.error('Unhandled request error:', error);
+  res.status(500).json({ success: false, message: 'Unexpected server error.' });
+});
+
+async function startServer() {
+  try {
+    assignCollections(await loadSnapshot());
+    await migrateUserPasswords();
+    const server = app.listen(PORT, () => {
+      console.log(`ElderNest backend running at http://localhost:${PORT}`);
+      console.log(`Using MySQL database ${DB_CONFIG.database} at ${DB_CONFIG.host}:${DB_CONFIG.port}`);
+    });
+
+    async function shutdown(signal) {
+      console.log(`${signal} received. Shutting down ElderNest...`);
+      server.close(async () => {
+        try {
+          await closePool();
+          process.exit(0);
+        } catch (error) {
+          console.error('Failed during shutdown:', error);
+          process.exit(1);
+        }
+      });
+    }
+
+    process.on('SIGTERM', () => shutdown('SIGTERM'));
+    process.on('SIGINT', () => shutdown('SIGINT'));
+  } catch (error) {
+    console.error('Failed to start ElderNest backend with MySQL:', error.message);
+    process.exit(1);
+  }
+}
+
+startServer();
